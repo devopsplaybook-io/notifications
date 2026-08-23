@@ -10,3 +10,5 @@ coverage
 .vscode
 /env-dev.js
 /*/tmp
+.nuxt
+.output
