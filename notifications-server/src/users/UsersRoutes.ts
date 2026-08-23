@@ -11,6 +11,7 @@ import {
   UsersDataGet,
   UsersDataGetByName,
   UsersDataList,
+  UsersDataUpdate,
 } from "./UsersData";
 
 export class UsersRoutes {

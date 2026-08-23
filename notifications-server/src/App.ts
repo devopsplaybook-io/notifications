@@ -3,12 +3,13 @@ import { DbUtilsSetOTel, DbUtilsInit } from "@devopsplaybook.io/common-utils";
 import { StandardTracerFastifyRegisterHooks } from "@devopsplaybook.io/otel-utils-fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
-import Fastify from "fastify";
+import Fastify, { RequestGenericInterface } from "fastify";
 import { watchFile } from "fs-extra";
 import * as path from "path";
 import { Config } from "./Config";
 import {
   OTelLogger,
+  OTelRequestSpan,
   OTelSetMeter,
   OTelSetTracer,
   OTelTracer,
@@ -77,7 +78,12 @@ Promise.resolve().then(async () => {
   });
 
   // Push subscription endpoint
-  fastify.post("/api/push/subscribe", async (req, res) => {
+  interface PostPushSubscribe extends RequestGenericInterface {
+    Body: {
+      subscription: any;
+    };
+  }
+  fastify.post<PostPushSubscribe>("/api/push/subscribe", async (req, res) => {
     const { AuthGetUserSession } = require("./users/Auth");
     const { PushSubscribe } = require("./notifications/PushService");
     const userSession = await AuthGetUserSession(req);

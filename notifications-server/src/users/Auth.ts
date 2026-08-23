@@ -79,7 +79,7 @@ export async function AuthMustBeAuthenticated(
 }
 
 export async function AuthGetUserSession(req: any): Promise<UserSession> {
-  const userSession: UserSession = { isAuthenticated: false };
+  const userSession: UserSession = { isAuthenticated: false, userId: null };
   if (req.headers.authorization) {
     try {
       const info = jwt.verify(
