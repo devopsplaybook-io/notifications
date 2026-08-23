@@ -5,7 +5,7 @@ import { User } from "../model/User";
 import { UserSession } from "../model/UserSession";
 import { Config } from "../Config";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
+import { DbUtilsExecSQL, DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
 import { OTelLogger, OTelTracer } from "../OTelContext";
 
 const logger = OTelLogger().createModuleLogger(path.basename(__filename));
@@ -23,13 +23,13 @@ export async function AuthInit(context: Span, configIn: Config) {
 
   if (configHasKey) {
     if (authKeyRaw.length === 0) {
-      await DbUtilsQuerySQL(
+      await DbUtilsExecSQL(
         span,
         "INSERT INTO metadata (type, value, dateCreated) VALUES ('auth_token', ?, ?)",
         [configIn.JWT_KEY, new Date().toISOString()],
       );
     } else if (authKeyRaw[0].value !== configIn.JWT_KEY) {
-      await DbUtilsQuerySQL(
+      await DbUtilsExecSQL(
         span,
         "UPDATE metadata SET value = ? WHERE type = 'auth_token'",
         [configIn.JWT_KEY],
@@ -37,7 +37,7 @@ export async function AuthInit(context: Span, configIn: Config) {
     }
   } else if (authKeyRaw.length === 0) {
     configIn.JWT_KEY = uuidv4();
-    await DbUtilsQuerySQL(
+    await DbUtilsExecSQL(
       span,
       "INSERT INTO metadata (type, value, dateCreated) VALUES ('auth_token', ?, ?)",
       [configIn.JWT_KEY, new Date().toISOString()],

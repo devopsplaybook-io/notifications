@@ -40,7 +40,11 @@ Promise.resolve().then(async () => {
 
   const span = OTelTracer().startSpan("init");
 
-  await DbUtilsInit(span, config, `${__dirname}/../sql`);
+  await DbUtilsInit(
+    span,
+    config,
+    path.join(__dirname, `../sql/${config.DATABASE_TYPE}`),
+  );
   await AuthInit(span, config);
   PushInit(config);
 
