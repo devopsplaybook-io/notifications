@@ -13,12 +13,15 @@ export default defineNuxtConfig({
         "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no",
       title: "Notifications",
       meta: [
-        { name: "description", content: "Notifications - Centralized notification service" },
+        {
+          name: "description",
+          content: "Notifications - Centralized notification service",
+        },
         { name: "theme-color", content: "#1976d2" },
       ],
       link: [
-        { rel: "icon", href: "/icon.png" },
-        { rel: "apple-touch-icon", href: "/images/icon-512.png" },
+        { rel: "icon", href: "/icon.svg" },
+        { rel: "apple-touch-icon", href: "/icon.svg" },
         { rel: "stylesheet", href: "/styles.css" },
         { rel: "manifest", href: "/manifest.json" },
       ],

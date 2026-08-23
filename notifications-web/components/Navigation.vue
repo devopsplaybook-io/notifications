@@ -3,16 +3,14 @@
     <ul class="menu-links">
       <li>
         <NuxtLink to="/" class="brand-link"
-          ><img src="/icon.png" alt="Notifications" class="nav-logo" />
+          ><img src="/icon.svg" alt="Notifications" class="nav-logo" />
           <strong>Notifications</strong></NuxtLink
         >
       </li>
     </ul>
     <ul class="menu-links">
       <li v-if="authenticationStore.isAuthenticated">
-        <NuxtLink
-          to="/"
-          :class="activeRoute == '' ? 'active' : 'inactive'"
+        <NuxtLink to="/" :class="activeRoute == '' ? 'active' : 'inactive'"
           ><i class="bi bi-bell-fill"></i>
           <span class="nav-label">Notifications</span></NuxtLink
         >
