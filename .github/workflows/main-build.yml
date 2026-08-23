@@ -10,6 +10,7 @@ jobs:
   merge-build:
     uses: devopsplaybook-io/common-utils/.github/workflows/reusable-merge-build.yml@main
     with:
+      node_version: "26"
       node_app_directories: '["notifications-server"]'
     secrets:
       DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
