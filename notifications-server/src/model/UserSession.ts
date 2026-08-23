@@ -1,4 +1,4 @@
 export class UserSession {
-  isAuthenticated: boolean = false;
+  isAuthenticated = false;
   userId: string = null;
 }

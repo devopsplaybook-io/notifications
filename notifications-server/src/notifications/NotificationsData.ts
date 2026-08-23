@@ -9,8 +9,8 @@ const logger = OTelLogger().createModuleLogger(path.basename(__filename));
 
 export async function NotificationsDataList(
   context: Span,
-  limit: number = 50,
-  offset: number = 0,
+  limit = 50,
+  offset = 0,
 ): Promise<Notification[]> {
   const span = OTelTracer().startSpan("NotificationsDataList", context);
   try {

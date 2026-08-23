@@ -1,7 +1,7 @@
 import * as webpush from "web-push";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { DbUtilsExecSQL, DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
-import { OTelLogger, OTelTracer } from "../OTelContext";
+import { OTelTracer } from "../OTelContext";
 import { Config } from "../Config";
 import { Notification } from "../model/Notification";
 
@@ -25,7 +25,7 @@ export function PushGetPublicKey(): string {
 export async function PushSubscribe(
   context: Span,
   userId: string,
-  subscription: any,
+  subscription: Record<string, unknown>,
 ): Promise<void> {
   const span = OTelTracer().startSpan("PushSubscribe", context);
   try {
@@ -71,7 +71,7 @@ export async function PushSendToAll(notification: Notification): Promise<void> {
       source: notification.source,
     });
 
-    const promises = subscriptions.map(async (sub: any) => {
+    const promises = subscriptions.map(async (sub: Record<string, string>) => {
       try {
         const subscription = JSON.parse(sub.subscription);
         await webpush.sendNotification(subscription, payload);

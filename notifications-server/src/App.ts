@@ -14,11 +14,11 @@ import {
   OTelSetTracer,
   OTelTracer,
 } from "./OTelContext";
-import { AuthInit } from "./users/Auth";
+import { AuthGetUserSession, AuthInit } from "./users/Auth";
 import { UsersRoutes } from "./users/UsersRoutes";
 import { NotificationsRoutes } from "./notifications/NotificationsRoutes";
 import { ApiTokensRoutes } from "./apitokens/ApiTokensRoutes";
-import { PushInit } from "./notifications/PushService";
+import { PushInit, PushGetPublicKey, PushSubscribe } from "./notifications/PushService";
 
 const logger = OTelLogger().createModuleLogger("app");
 
@@ -72,20 +72,17 @@ Promise.resolve().then(async () => {
   });
 
   // VAPID public key endpoint (for PWA push)
-  fastify.get("/api/push/publickey", async (req, res) => {
-    const { PushGetPublicKey } = require("./notifications/PushService");
+  fastify.get("/api/push/publickey", async (_req, res) => {
     return res.status(200).send({ publicKey: PushGetPublicKey() });
   });
 
   // Push subscription endpoint
   interface PostPushSubscribe extends RequestGenericInterface {
     Body: {
-      subscription: any;
+      subscription: Record<string, unknown>;
     };
   }
   fastify.post<PostPushSubscribe>("/api/push/subscribe", async (req, res) => {
-    const { AuthGetUserSession } = require("./users/Auth");
-    const { PushSubscribe } = require("./notifications/PushService");
     const userSession = await AuthGetUserSession(req);
     if (!userSession.isAuthenticated) {
       return res.status(403).send({ error: "Access Denied" });

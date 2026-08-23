@@ -6,7 +6,14 @@ import { OTelLogger, OTelTracer } from "../OTelContext";
 
 const logger = OTelLogger().createModuleLogger(path.basename(__filename));
 
-export async function ApiTokensList(context: Span): Promise<any[]> {
+interface ApiToken {
+  id: string;
+  name: string;
+  token: string;
+  createdAt: string;
+}
+
+export async function ApiTokensList(context: Span): Promise<ApiToken[]> {
   const span = OTelTracer().startSpan("ApiTokensList", context);
   try {
     return await DbUtilsQuerySQL(

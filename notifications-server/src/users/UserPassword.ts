@@ -1,10 +1,7 @@
 import * as bcrypt from "bcrypt";
-import * as path from "path";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OTelLogger, OTelTracer } from "../OTelContext";
+import { OTelTracer } from "../OTelContext";
 import { User } from "../model/User";
-
-const logger = OTelLogger().createModuleLogger(path.basename(__filename));
 
 export async function UserPasswordSetPassword(
   context: Span,

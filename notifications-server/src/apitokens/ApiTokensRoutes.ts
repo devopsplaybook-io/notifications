@@ -43,7 +43,7 @@ export class ApiTokensRoutes {
       if (!userSession.isAuthenticated) {
         return res.status(403).send({ error: "Access Denied" });
       }
-      const { id } = req.params as any;
+      const { id } = req.params as { id: string };
       await ApiTokensDelete(OTelRequestSpan(req), id);
       return res.status(200).send({ success: true });
     });
