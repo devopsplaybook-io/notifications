@@ -18,7 +18,11 @@ import { AuthGetUserSession, AuthInit } from "./users/Auth";
 import { UsersRoutes } from "./users/UsersRoutes";
 import { NotificationsRoutes } from "./notifications/NotificationsRoutes";
 import { ApiTokensRoutes } from "./apitokens/ApiTokensRoutes";
-import { PushInit, PushGetPublicKey, PushSubscribe } from "./notifications/PushService";
+import {
+  PushInit,
+  PushGetPublicKey,
+  PushSubscribe,
+} from "./notifications/PushService";
 
 const logger = OTelLogger().createModuleLogger("app");
 
@@ -94,7 +98,11 @@ Promise.resolve().then(async () => {
     if (!req.body.subscription) {
       return res.status(400).send({ error: "Missing: subscription" });
     }
-    await PushSubscribe(OTelRequestSpan(req), userSession.userId, req.body.subscription);
+    await PushSubscribe(
+      OTelRequestSpan(req),
+      userSession.userId,
+      req.body.subscription,
+    );
     return res.status(201).send({ success: true });
   });
 
