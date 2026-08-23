@@ -1,0 +1,6 @@
+{
+  "CORS_POLICY_ORIGIN": "*",
+  "JWT_KEY": "dev",
+  "DATABASE_TYPE": "sqlite",
+  "LOG_LEVEL": "debug"
+}
