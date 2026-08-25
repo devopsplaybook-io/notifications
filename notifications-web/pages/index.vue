@@ -12,36 +12,69 @@
       <p>No notifications yet.</p>
     </div>
 
-    <div v-else id="notifications-list">
-      <article
-        v-for="n in notificationsStore.notifications"
-        :key="n.id"
-        class="notification-card"
-      >
-        <header>
-          <div class="notification-header">
-            <h3>
-              <i :class="severityIcon(n.severity)"></i>
-              {{ n.title }}
-            </h3>
-            <span :class="'severity-badge severity-' + n.severity">{{ n.severity }}</span>
-          </div>
-          <div class="notification-meta">
-            <span><i class="bi bi-clock"></i> {{ formatDate(n.createdAt) }}</span>
-            <span><i class="bi bi-app-indicator"></i> {{ n.source }}</span>
-          </div>
-        </header>
-        <section v-if="n.body">
-          <p>{{ n.body }}</p>
-        </section>
-      </article>
+    <div v-else>
+      <div class="page-actions">
+        <button class="outline secondary" @click="confirmDeleteAll">
+          <i class="bi bi-trash3"></i> Clear all
+        </button>
+      </div>
+
+      <div id="notifications-list">
+        <article
+          v-for="n in notificationsStore.notifications"
+          :key="n.id"
+          class="notification-card"
+        >
+          <header>
+            <div class="notification-header">
+              <h3>
+                <i :class="severityIcon(n.severity)"></i>
+                {{ n.title }}
+              </h3>
+              <div class="notification-actions">
+                <span :class="'severity-badge severity-' + n.severity">{{ n.severity }}</span>
+                <button class="delete-btn" title="Delete" @click="deleteNotification(n.id)">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+            </div>
+            <div class="notification-meta">
+              <span><i class="bi bi-clock"></i> {{ formatDate(n.createdAt) }}</span>
+              <span><i class="bi bi-app-indicator"></i> {{ n.source }}</span>
+            </div>
+          </header>
+          <section v-if="n.body" class="notification-body">
+            <div
+              :class="['notification-content', { expanded: n._expanded }]"
+              v-html="renderMarkdown(n.body)"
+            ></div>
+            <button
+              v-if="isLongContent(n.body)"
+              class="expand-btn outline secondary"
+              @click="n._expanded = !n._expanded"
+            >
+              <i :class="n._expanded ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
+              {{ n._expanded ? 'Show less' : 'Show more' }}
+            </button>
+          </section>
+        </article>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
+
+// Configure marked for safe rendering
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
 
 function severityIcon(severity) {
   switch (severity) {
@@ -58,6 +91,27 @@ function formatDate(dateStr) {
   return d.toLocaleString();
 }
 
+function renderMarkdown(text) {
+  if (!text) return "";
+  const html = marked.parse(text);
+  return DOMPurify.sanitize(html);
+}
+
+function isLongContent(text) {
+  if (!text) return false;
+  return text.length > 500 || text.split("\n").length > 10;
+}
+
+async function deleteNotification(id) {
+  await notificationsStore.deleteNotification(id);
+}
+
+function confirmDeleteAll() {
+  if (confirm("Delete all notifications? This cannot be undone.")) {
+    notificationsStore.deleteAllNotifications();
+  }
+}
+
 onMounted(async () => {
   if (await authenticationStore.ensureAuthenticated()) {
     notificationsStore.loadNotifications();
@@ -69,6 +123,18 @@ onMounted(async () => {
 .page {
   height: 100%;
   overflow-y: auto;
+}
+
+.page-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--space-sm) var(--space-xs);
+}
+
+.page-actions button {
+  font-size: var(--font-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin: 0;
 }
 
 #notifications-list {
@@ -84,12 +150,39 @@ onMounted(async () => {
 .notification-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: var(--space-sm);
 }
 
 .notification-header h3 {
   margin: 0;
   font-size: var(--font-lg);
+  flex: 1;
+}
+
+.notification-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: var(--space-xs);
+  margin: 0;
+  font-size: var(--font-sm);
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.delete-btn:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-bg, rgba(220, 53, 69, 0.1));
 }
 
 .notification-meta {
@@ -102,5 +195,80 @@ onMounted(async () => {
 
 .notification-meta i {
   margin-right: var(--space-xs);
+}
+
+.notification-body {
+  margin-top: var(--space-sm);
+}
+
+.notification-content {
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+  transition: max-height 0.3s ease;
+}
+
+.notification-content.expanded {
+  max-height: none;
+}
+
+.notification-content:not(.expanded)::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(transparent, var(--pico-card-background-color, var(--pico-background-color)));
+  pointer-events: none;
+}
+
+.notification-content.expanded::after {
+  display: none;
+}
+
+/* Markdown content styling */
+.notification-content :deep(h1),
+.notification-content :deep(h2),
+.notification-content :deep(h3) {
+  margin-top: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.notification-content :deep(p) {
+  margin-bottom: var(--space-xs);
+}
+
+.notification-content :deep(ul),
+.notification-content :deep(ol) {
+  padding-left: var(--space-lg);
+  margin-bottom: var(--space-xs);
+}
+
+.notification-content :deep(code) {
+  background: var(--pico-code-background-color, rgba(0, 0, 0, 0.05));
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+}
+
+.notification-content :deep(pre) {
+  background: var(--pico-code-background-color, rgba(0, 0, 0, 0.05));
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+
+.notification-content :deep(pre code) {
+  background: none;
+  padding: 0;
+}
+
+.expand-btn {
+  width: 100%;
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
+  padding: var(--space-xs);
 }
 </style>

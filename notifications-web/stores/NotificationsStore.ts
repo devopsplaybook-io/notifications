@@ -29,6 +29,34 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         this.loading = false;
       }
     },
+
+    async deleteNotification(id: string): Promise<void> {
+      try {
+        const headers = await AuthService.getAuthHeader();
+        await axios.delete(
+          `${(await Config.get()).SERVER_URL}/notifications/${id}`,
+          headers,
+        );
+        this.notifications = this.notifications.filter((n: any) => n.id !== id);
+        this.total--;
+      } catch (err) {
+        console.error("Failed to delete notification", err);
+      }
+    },
+
+    async deleteAllNotifications(): Promise<void> {
+      try {
+        const headers = await AuthService.getAuthHeader();
+        await axios.delete(
+          `${(await Config.get()).SERVER_URL}/notifications`,
+          headers,
+        );
+        this.notifications = [];
+        this.total = 0;
+      } catch (err) {
+        console.error("Failed to delete all notifications", err);
+      }
+    },
   },
 });
 

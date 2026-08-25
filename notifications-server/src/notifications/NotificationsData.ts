@@ -83,3 +83,31 @@ export async function NotificationsDataCount(
     span.end();
   }
 }
+
+export async function NotificationsDataDelete(
+  context: Span,
+  id: string,
+): Promise<boolean> {
+  const span = OTelTracer().startSpan("NotificationsDataDelete", context);
+  try {
+    await DbUtilsExecSQL(span, "DELETE FROM notifications WHERE id = ?", [id]);
+    logger.info(`Notification deleted: ${id}`, span);
+    return true;
+  } finally {
+    span.end();
+  }
+}
+
+export async function NotificationsDataDeleteAll(
+  context: Span,
+): Promise<number> {
+  const span = OTelTracer().startSpan("NotificationsDataDeleteAll", context);
+  try {
+    const countBefore = await NotificationsDataCount(span);
+    await DbUtilsExecSQL(span, "DELETE FROM notifications", []);
+    logger.info(`All notifications deleted (${countBefore} records)`, span);
+    return countBefore;
+  } finally {
+    span.end();
+  }
+}

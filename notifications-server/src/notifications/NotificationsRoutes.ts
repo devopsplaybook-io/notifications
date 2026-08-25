@@ -4,6 +4,8 @@ import {
   NotificationsDataList,
   NotificationsDataAdd,
   NotificationsDataCount,
+  NotificationsDataDelete,
+  NotificationsDataDeleteAll,
 } from "./NotificationsData";
 import { AuthGetUserSession } from "../users/Auth";
 import { ApiTokensValidate } from "../apitokens/ApiTokensData";
@@ -82,6 +84,31 @@ export class NotificationsRoutes {
       }
 
       return res.status(201).send(created);
+    });
+
+    // Delete a single notification (requires user auth)
+    interface DeleteNotification extends RequestGenericInterface {
+      Params: {
+        id: string;
+      };
+    }
+    fastify.delete<DeleteNotification>("/:id", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated) {
+        return res.status(403).send({ error: "Access Denied" });
+      }
+      await NotificationsDataDelete(OTelRequestSpan(req), req.params.id);
+      return res.status(200).send({ success: true });
+    });
+
+    // Delete all notifications (requires user auth)
+    fastify.delete("/", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated) {
+        return res.status(403).send({ error: "Access Denied" });
+      }
+      const count = await NotificationsDataDeleteAll(OTelRequestSpan(req));
+      return res.status(200).send({ success: true, deleted: count });
     });
   }
 }
