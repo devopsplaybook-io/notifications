@@ -60,7 +60,9 @@ export class PushService {
         // Subscribe
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: PushService.urlBase64ToUint8Array(publicKey) as BufferSource,
+          applicationServerKey: PushService.urlBase64ToUint8Array(
+            publicKey,
+          ) as BufferSource,
         });
       }
 
@@ -76,7 +78,7 @@ export class PushService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: token,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ subscription: subscription.toJSON() }),
       });
@@ -95,7 +97,9 @@ export class PushService {
 
   private static urlBase64ToUint8Array(base64String: string): Uint8Array {
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const base64 = (base64String + padding)
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
     const rawData = window.atob(base64);
     const outputArray = new Uint8Array(rawData.length);
     for (let i = 0; i < rawData.length; ++i) {

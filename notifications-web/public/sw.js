@@ -18,24 +18,28 @@ self.addEventListener("push", (event) => {
     tag: data.id || "notification",
   };
 
-  event.waitUntil(self.registration.showNotification(data.title || "Notification", options));
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Notification", options),
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      // If a window is already open, focus it
-      for (const client of clientList) {
-        if (client.url === "/" || client.url === "/index.html") {
-          return client.focus();
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        // If a window is already open, focus it
+        for (const client of clientList) {
+          if (client.url === "/" || client.url === "/index.html") {
+            return client.focus();
+          }
         }
-      }
-      // Otherwise, open a new window
-      if (clients.openWindow) {
-        return clients.openWindow("/");
-      }
-    })
+        // Otherwise, open a new window
+        if (clients.openWindow) {
+          return clients.openWindow("/");
+        }
+      }),
   );
 });

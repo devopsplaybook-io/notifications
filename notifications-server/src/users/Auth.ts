@@ -71,8 +71,11 @@ export async function AuthMustBeAuthenticated(
   let authenticated = false;
   if (req.headers.authorization) {
     try {
-      jwt.verify(req.headers.authorization.split(" ")[1], config.JWT_KEY);
-      authenticated = true;
+      const parts = req.headers.authorization.split(" ");
+      if (parts.length === 2 && parts[0] === "Bearer") {
+        jwt.verify(parts[1], config.JWT_KEY);
+        authenticated = true;
+      }
     } catch {
       authenticated = false;
     }
@@ -88,10 +91,14 @@ export async function AuthGetUserSession(req: any): Promise<UserSession> {
   const userSession: UserSession = { isAuthenticated: false, userId: null };
   if (req.headers.authorization) {
     try {
-      const info = jwt.verify(
-        req.headers.authorization.split(" ")[1],
-        config.JWT_KEY,
-      );
+      const parts = req.headers.authorization.split(" ");
+      if (parts.length !== 2 || parts[0] !== "Bearer") {
+        logger.warn(
+          "Invalid authorization header format (expected: Bearer <token>)",
+        );
+        return userSession;
+      }
+      const info = jwt.verify(parts[1], config.JWT_KEY);
       userSession.userId = info.userId;
       userSession.isAuthenticated = true;
     } catch (err) {
