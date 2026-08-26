@@ -7,7 +7,10 @@
 
     <div v-else-if="notificationsStore.loading" class="loading-indicator"></div>
 
-    <div v-else-if="notificationsStore.notifications.length === 0" class="empty-state">
+    <div
+      v-else-if="notificationsStore.notifications.length === 0"
+      class="empty-state"
+    >
       <i class="bi bi-bell-fill"></i>
       <p>No notifications yet.</p>
     </div>
@@ -32,14 +35,22 @@
                 {{ n.title }}
               </h3>
               <div class="notification-actions">
-                <span :class="'severity-badge severity-' + n.severity">{{ n.severity }}</span>
-                <button class="delete-btn" title="Delete" @click="deleteNotification(n.id)">
+                <span :class="'severity-badge severity-' + n.severity">{{
+                  n.severity
+                }}</span>
+                <button
+                  class="delete-btn"
+                  title="Delete"
+                  @click="deleteNotification(n.id)"
+                >
                   <i class="bi bi-x-lg"></i>
                 </button>
               </div>
             </div>
             <div class="notification-meta">
-              <span><i class="bi bi-clock"></i> {{ formatDate(n.createdAt) }}</span>
+              <span
+                ><i class="bi bi-clock"></i> {{ formatDate(n.createdAt) }}</span
+              >
               <span><i class="bi bi-app-indicator"></i> {{ n.source }}</span>
             </div>
           </header>
@@ -53,8 +64,10 @@
               class="expand-btn outline secondary"
               @click="n._expanded = !n._expanded"
             >
-              <i :class="n._expanded ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
-              {{ n._expanded ? 'Show less' : 'Show more' }}
+              <i
+                :class="n._expanded ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"
+              ></i>
+              {{ n._expanded ? "Show less" : "Show more" }}
             </button>
           </section>
         </article>
@@ -78,10 +91,14 @@ marked.setOptions({
 
 function severityIcon(severity) {
   switch (severity) {
-    case "error": return "bi bi-exclamation-triangle-fill";
-    case "warning": return "bi bi-exclamation-circle-fill";
-    case "success": return "bi bi-check-circle-fill";
-    default: return "bi bi-info-circle-fill";
+    case "error":
+      return "bi bi-exclamation-triangle-fill";
+    case "warning":
+      return "bi bi-exclamation-circle-fill";
+    case "success":
+      return "bi bi-check-circle-fill";
+    default:
+      return "bi bi-info-circle-fill";
   }
 }
 
@@ -219,7 +236,10 @@ onMounted(async () => {
   left: 0;
   right: 0;
   height: 60px;
-  background: linear-gradient(transparent, var(--pico-card-background-color, var(--pico-background-color)));
+  background: linear-gradient(
+    transparent,
+    var(--pico-card-background-color, var(--pico-background-color))
+  );
   pointer-events: none;
 }
 

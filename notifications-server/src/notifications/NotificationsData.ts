@@ -1,7 +1,10 @@
 import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { DbUtilsExecSQL, DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
+import {
+  DbUtilsExecSQL,
+  DbUtilsQuerySQL,
+} from "@devopsplaybook.io/common-utils";
 import { OTelLogger, OTelTracer } from "../OTelContext";
 import { Notification } from "../model/Notification";
 
@@ -69,9 +72,7 @@ export async function NotificationsDataAdd(
   }
 }
 
-export async function NotificationsDataCount(
-  context: Span,
-): Promise<number> {
+export async function NotificationsDataCount(context: Span): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataCount", context);
   try {
     const result = await DbUtilsQuerySQL(
