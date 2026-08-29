@@ -1,0 +1,85 @@
+/* ============================================================
+   Shared Component Styles
+   ============================================================ */
+
+.fade-in-fast {
+  animation: fadeIn 0.5s;
+}
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.loading-indicator {
+  width: 3rem;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 3rem;
+  margin-bottom: 3rem;
+  aspect-ratio: 1;
+  --c: no-repeat linear-gradient(var(--color-text) 0 0);
+  background:
+    var(--c) 0% 50%,
+    var(--c) 50% 50%,
+    var(--c) 100% 50%;
+  background-size: 20% 100%;
+  animation: l1 2s infinite linear;
+}
+@keyframes l1 {
+  0% { background-size: 20% 100%, 20% 100%, 20% 100%; }
+  33% { background-size: 20% 10%, 20% 100%, 20% 100%; }
+  50% { background-size: 20% 100%, 20% 10%, 20% 100%; }
+  66% { background-size: 20% 100%, 20% 100%, 20% 10%; }
+  100% { background-size: 20% 100%, 20% 100%, 20% 100%; }
+}
+
+.actions i {
+  font-size: var(--font-xl);
+  cursor: pointer;
+  margin-left: var(--space-sm);
+  margin-right: var(--space-sm);
+  color: var(--color-text);
+}
+
+#page-alert-messages {
+  position: fixed;
+  right: 3rem;
+  bottom: 3rem;
+  max-width: 80vw;
+}
+
+.empty-state {
+  text-align: center;
+  opacity: 0.6;
+  padding: var(--space-3xl);
+}
+.empty-state i {
+  font-size: 3em;
+  display: block;
+  margin-bottom: var(--space-base);
+}
+
+/* Notification severity badges */
+.severity-badge {
+  display: inline-block;
+  padding: 0.1em 0.5em;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  font-weight: bold;
+}
+.severity-info {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+.severity-warning {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+}
+.severity-error {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+}
+.severity-success {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+}
