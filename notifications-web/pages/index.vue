@@ -56,7 +56,10 @@
           </header>
           <section v-if="n.body" class="notification-body">
             <div
-              :class="['notification-content', { expanded: n._expanded }]"
+              :class="[
+                'notification-content',
+                { expanded: n._expanded, truncatable: isLongContent(n.body) },
+              ]"
               v-html="renderMarkdown(n.body)"
             ></div>
             <button
@@ -219,17 +222,20 @@ onMounted(async () => {
 }
 
 .notification-content {
+  position: relative;
+}
+
+.notification-content.truncatable {
   max-height: 200px;
   overflow: hidden;
-  position: relative;
   transition: max-height 0.3s ease;
 }
 
-.notification-content.expanded {
+.notification-content.truncatable.expanded {
   max-height: none;
 }
 
-.notification-content:not(.expanded)::after {
+.notification-content.truncatable:not(.expanded)::after {
   content: "";
   position: absolute;
   bottom: 0;
@@ -241,10 +247,6 @@ onMounted(async () => {
     var(--pico-card-background-color, var(--pico-background-color))
   );
   pointer-events: none;
-}
-
-.notification-content.expanded::after {
-  display: none;
 }
 
 /* Markdown content styling */
