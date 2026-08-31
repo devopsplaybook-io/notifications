@@ -14,14 +14,37 @@ export async function NotificationsDataList(
   context: Span,
   limit = 50,
   offset = 0,
+  source = "",
 ): Promise<Notification[]> {
   const span = OTelTracer().startSpan("NotificationsDataList", context);
   try {
+    if (source) {
+      return await DbUtilsQuerySQL(
+        span,
+        "SELECT * FROM notifications WHERE source = ? ORDER BY createdAt DESC LIMIT ? OFFSET ?",
+        [source, limit, offset],
+      );
+    }
     return await DbUtilsQuerySQL(
       span,
       "SELECT * FROM notifications ORDER BY createdAt DESC LIMIT ? OFFSET ?",
       [limit, offset],
     );
+  } finally {
+    span.end();
+  }
+}
+
+export async function NotificationsDataSources(
+  context: Span,
+): Promise<string[]> {
+  const span = OTelTracer().startSpan("NotificationsDataSources", context);
+  try {
+    const result = await DbUtilsQuerySQL(
+      span,
+      "SELECT DISTINCT source FROM notifications ORDER BY source ASC",
+    );
+    return result.map((row) => row.source);
   } finally {
     span.end();
   }
@@ -72,9 +95,20 @@ export async function NotificationsDataAdd(
   }
 }
 
-export async function NotificationsDataCount(context: Span): Promise<number> {
+export async function NotificationsDataCount(
+  context: Span,
+  source = "",
+): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataCount", context);
   try {
+    if (source) {
+      const result = await DbUtilsQuerySQL(
+        span,
+        "SELECT COUNT(*) as count FROM notifications WHERE source = ?",
+        [source],
+      );
+      return result.length > 0 ? result[0].count : 0;
+    }
     const result = await DbUtilsQuerySQL(
       span,
       "SELECT COUNT(*) as count FROM notifications",

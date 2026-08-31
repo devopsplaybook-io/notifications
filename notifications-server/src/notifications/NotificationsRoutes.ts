@@ -6,6 +6,7 @@ import {
   NotificationsDataCount,
   NotificationsDataDelete,
   NotificationsDataDeleteAll,
+  NotificationsDataSources,
 } from "./NotificationsData";
 import { AuthGetUserSession } from "../users/Auth";
 import { ApiTokensValidate } from "../apitokens/ApiTokensData";
@@ -19,6 +20,7 @@ export class NotificationsRoutes {
       Querystring: {
         limit?: string;
         offset?: string;
+        source?: string;
       };
     }
     fastify.get<GetNotifications>("/", async (req, res) => {
@@ -28,13 +30,25 @@ export class NotificationsRoutes {
       }
       const limit = parseInt(req.query.limit) || 50;
       const offset = parseInt(req.query.offset) || 0;
+      const source = req.query.source || "";
       const notifications = await NotificationsDataList(
         OTelRequestSpan(req),
         limit,
         offset,
+        source,
       );
-      const total = await NotificationsDataCount(OTelRequestSpan(req));
+      const total = await NotificationsDataCount(OTelRequestSpan(req), source);
       return res.status(200).send({ notifications, total });
+    });
+
+    // List distinct notification sources (requires user auth)
+    fastify.get("/sources", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated) {
+        return res.status(403).send({ error: "Access Denied" });
+      }
+      const sources = await NotificationsDataSources(OTelRequestSpan(req));
+      return res.status(200).send({ sources });
     });
 
     // Create notification via API (requires API token)

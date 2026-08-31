@@ -6,6 +6,8 @@ export const NotificationsStore = defineStore("NotificationsStore", {
   state: () => ({
     notifications: [] as any[],
     total: 0,
+    sources: [] as string[],
+    sourceFilter: "",
     loading: false,
     loaded: false,
   }),
@@ -16,10 +18,11 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       this.loading = true;
       try {
         const headers = await AuthService.getAuthHeader();
-        const res = await axios.get(
-          `${(await Config.get()).SERVER_URL}/notifications?limit=50&offset=0`,
-          headers,
-        );
+        let url = `${(await Config.get()).SERVER_URL}/notifications?limit=50&offset=0`;
+        if (this.sourceFilter) {
+          url += `&source=${encodeURIComponent(this.sourceFilter)}`;
+        }
+        const res = await axios.get(url, headers);
         this.notifications = res.data.notifications;
         this.total = res.data.total;
         this.loaded = true;
@@ -28,6 +31,24 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       } finally {
         this.loading = false;
       }
+    },
+
+    async loadSources(): Promise<void> {
+      try {
+        const headers = await AuthService.getAuthHeader();
+        const res = await axios.get(
+          `${(await Config.get()).SERVER_URL}/notifications/sources`,
+          headers,
+        );
+        this.sources = res.data.sources;
+      } catch (err) {
+        console.error("Failed to load notification sources", err);
+      }
+    },
+
+    async setSourceFilter(source: string): Promise<void> {
+      this.sourceFilter = source;
+      await this.loadNotifications();
     },
 
     async deleteNotification(id: string): Promise<void> {
@@ -39,6 +60,7 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         );
         this.notifications = this.notifications.filter((n: any) => n.id !== id);
         this.total--;
+        await this.loadSources();
       } catch (err) {
         console.error("Failed to delete notification", err);
       }
@@ -53,6 +75,8 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         );
         this.notifications = [];
         this.total = 0;
+        this.sources = [];
+        this.sourceFilter = "";
       } catch (err) {
         console.error("Failed to delete all notifications", err);
       }
