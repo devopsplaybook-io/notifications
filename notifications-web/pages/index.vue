@@ -7,22 +7,43 @@
 
     <div v-else-if="notificationsStore.loading" class="loading-indicator"></div>
 
-    <div
-      v-else-if="notificationsStore.notifications.length === 0"
-      class="empty-state"
-    >
-      <i class="bi bi-bell-fill"></i>
-      <p>No notifications yet.</p>
-    </div>
-
     <div v-else>
       <div class="page-actions">
+        <select
+          :value="notificationsStore.sourceFilter"
+          class="source-filter"
+          aria-label="Filter by source"
+          @change="onSourceFilterChange"
+        >
+          <option value="">All sources</option>
+          <option
+            v-for="source in notificationsStore.sources"
+            :key="source"
+            :value="source"
+          >
+            {{ source }}
+          </option>
+        </select>
         <button class="outline secondary" @click="confirmDeleteAll">
           <i class="bi bi-trash3"></i> Clear all
         </button>
       </div>
 
-      <div id="notifications-list">
+      <div
+        v-if="notificationsStore.notifications.length === 0"
+        class="empty-state"
+      >
+        <i class="bi bi-bell-fill"></i>
+        <p>
+          {{
+            notificationsStore.sourceFilter
+              ? "No notifications for this source."
+              : "No notifications yet."
+          }}
+        </p>
+      </div>
+
+      <div v-else id="notifications-list">
         <article
           v-for="n in notificationsStore.notifications"
           :key="n.id"
@@ -126,6 +147,10 @@ async function deleteNotification(id) {
   await notificationsStore.deleteNotification(id);
 }
 
+function onSourceFilterChange(event) {
+  notificationsStore.setSourceFilter(event.target.value);
+}
+
 function confirmDeleteAll() {
   if (confirm("Delete all notifications? This cannot be undone.")) {
     notificationsStore.deleteAllNotifications();
@@ -134,6 +159,7 @@ function confirmDeleteAll() {
 
 onMounted(async () => {
   if (await authenticationStore.ensureAuthenticated()) {
+    notificationsStore.loadSources();
     notificationsStore.loadNotifications();
   }
 });
@@ -147,7 +173,9 @@ onMounted(async () => {
 
 .page-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
   padding: 0 var(--space-sm) var(--space-xs);
 }
 
@@ -155,6 +183,13 @@ onMounted(async () => {
   font-size: var(--font-sm);
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
+}
+
+.source-filter {
+  font-size: var(--font-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin: 0;
+  width: auto;
 }
 
 #notifications-list {
