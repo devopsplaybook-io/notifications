@@ -7,6 +7,8 @@ import {
   NotificationsDataDelete,
   NotificationsDataDeleteAll,
   NotificationsDataSources,
+  NotificationsDataUpdateRead,
+  NotificationReadFilter,
 } from "./NotificationsData";
 import { AuthGetUserSession } from "../users/Auth";
 import { ApiTokensValidate } from "../apitokens/ApiTokensData";
@@ -21,6 +23,7 @@ export class NotificationsRoutes {
         limit?: string;
         offset?: string;
         source?: string;
+        read?: string;
       };
     }
     fastify.get<GetNotifications>("/", async (req, res) => {
@@ -31,13 +34,22 @@ export class NotificationsRoutes {
       const limit = parseInt(req.query.limit) || 50;
       const offset = parseInt(req.query.offset) || 0;
       const source = req.query.source || "";
+      const read: NotificationReadFilter =
+        req.query.read === "unread" || req.query.read === "read"
+          ? req.query.read
+          : "all";
       const notifications = await NotificationsDataList(
         OTelRequestSpan(req),
         limit,
         offset,
         source,
+        read,
       );
-      const total = await NotificationsDataCount(OTelRequestSpan(req), source);
+      const total = await NotificationsDataCount(
+        OTelRequestSpan(req),
+        source,
+        read,
+      );
       return res.status(200).send({ notifications, total });
     });
 
@@ -112,6 +124,34 @@ export class NotificationsRoutes {
         return res.status(403).send({ error: "Access Denied" });
       }
       await NotificationsDataDelete(OTelRequestSpan(req), req.params.id);
+      return res.status(200).send({ success: true });
+    });
+
+    // Update the read state of a notification (requires user auth)
+    interface PutNotificationRead extends RequestGenericInterface {
+      Params: {
+        id: string;
+      };
+      Body: {
+        read: boolean;
+      };
+    }
+    fastify.put<PutNotificationRead>("/:id/read", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated) {
+        return res.status(403).send({ error: "Access Denied" });
+      }
+      if (typeof req.body.read !== "boolean") {
+        return res.status(400).send({ error: "Missing: read" });
+      }
+      const updated = await NotificationsDataUpdateRead(
+        OTelRequestSpan(req),
+        req.params.id,
+        req.body.read,
+      );
+      if (!updated) {
+        return res.status(404).send({ error: "Notification not found" });
+      }
       return res.status(200).send({ success: true });
     });
 

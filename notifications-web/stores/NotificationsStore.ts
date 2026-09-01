@@ -8,6 +8,7 @@ export const NotificationsStore = defineStore("NotificationsStore", {
     total: 0,
     sources: [] as string[],
     sourceFilter: "",
+    readFilter: "unread",
     loading: false,
     loaded: false,
   }),
@@ -18,7 +19,7 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       this.loading = true;
       try {
         const headers = await AuthService.getAuthHeader();
-        let url = `${(await Config.get()).SERVER_URL}/notifications?limit=50&offset=0`;
+        let url = `${(await Config.get()).SERVER_URL}/notifications?limit=50&offset=0&read=${this.readFilter}`;
         if (this.sourceFilter) {
           url += `&source=${encodeURIComponent(this.sourceFilter)}`;
         }
@@ -51,6 +52,35 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       await this.loadNotifications();
     },
 
+    async setReadFilter(read: string): Promise<void> {
+      this.readFilter = read;
+      await this.loadNotifications();
+    },
+
+    async markRead(id: string, read: boolean): Promise<void> {
+      try {
+        const headers = await AuthService.getAuthHeader();
+        await axios.put(
+          `${(await Config.get()).SERVER_URL}/notifications/${id}/read`,
+          { read },
+          headers,
+        );
+        const idx = this.notifications.findIndex((n: any) => n.id === id);
+        if (idx === -1) return;
+        this.notifications[idx].read = read;
+        // Drop the item when it no longer matches the active filter
+        if (
+          (this.readFilter === "unread" && read) ||
+          (this.readFilter === "read" && !read)
+        ) {
+          this.notifications.splice(idx, 1);
+          this.total = Math.max(0, this.total - 1);
+        }
+      } catch (err) {
+        console.error("Failed to update notification read state", err);
+      }
+    },
+
     async deleteNotification(id: string): Promise<void> {
       try {
         const headers = await AuthService.getAuthHeader();
@@ -77,6 +107,7 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         this.total = 0;
         this.sources = [];
         this.sourceFilter = "";
+        this.readFilter = "unread";
       } catch (err) {
         console.error("Failed to delete all notifications", err);
       }

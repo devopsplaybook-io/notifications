@@ -9,21 +9,33 @@
 
     <div v-else>
       <div class="page-actions">
-        <select
-          :value="notificationsStore.sourceFilter"
-          class="source-filter"
-          aria-label="Filter by source"
-          @change="onSourceFilterChange"
-        >
-          <option value="">All sources</option>
-          <option
-            v-for="source in notificationsStore.sources"
-            :key="source"
-            :value="source"
+        <div class="filters">
+          <select
+            :value="notificationsStore.readFilter"
+            class="read-filter"
+            aria-label="Filter by read state"
+            @change="onReadFilterChange"
           >
-            {{ source }}
-          </option>
-        </select>
+            <option value="unread">Unread</option>
+            <option value="read">Read</option>
+            <option value="all">All</option>
+          </select>
+          <select
+            :value="notificationsStore.sourceFilter"
+            class="source-filter"
+            aria-label="Filter by source"
+            @change="onSourceFilterChange"
+          >
+            <option value="">All sources</option>
+            <option
+              v-for="source in notificationsStore.sources"
+              :key="source"
+              :value="source"
+            >
+              {{ source }}
+            </option>
+          </select>
+        </div>
         <button class="outline secondary" @click="confirmDeleteAll">
           <i class="bi bi-trash3"></i> Clear all
         </button>
@@ -34,20 +46,14 @@
         class="empty-state"
       >
         <i class="bi bi-bell-fill"></i>
-        <p>
-          {{
-            notificationsStore.sourceFilter
-              ? "No notifications for this source."
-              : "No notifications yet."
-          }}
-        </p>
+        <p>{{ emptyMessage }}</p>
       </div>
 
       <div v-else id="notifications-list">
         <article
           v-for="n in notificationsStore.notifications"
           :key="n.id"
-          class="notification-card"
+          :class="['notification-card', { unread: !n.read }]"
         >
           <header>
             <div class="notification-header">
@@ -59,6 +65,13 @@
                 <span :class="'severity-badge severity-' + n.severity">{{
                   n.severity
                 }}</span>
+                <button
+                  class="read-btn"
+                  :title="n.read ? 'Mark as unread' : 'Mark as read'"
+                  @click="toggleRead(n)"
+                >
+                  <i :class="n.read ? 'bi bi-envelope' : 'bi bi-envelope-open'"></i>
+                </button>
                 <button
                   class="delete-btn"
                   title="Delete"
@@ -86,7 +99,7 @@
             <button
               v-if="isLongContent(n.body)"
               class="expand-btn outline secondary"
-              @click="n._expanded = !n._expanded"
+              @click="toggleExpand(n)"
             >
               <i
                 :class="n._expanded ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"
@@ -106,6 +119,18 @@ import DOMPurify from "dompurify";
 
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
+
+const emptyMessage = computed(() => {
+  if (notificationsStore.readFilter === "unread") {
+    return "No unread notifications.";
+  }
+  if (notificationsStore.readFilter === "read") {
+    return "No read notifications.";
+  }
+  return notificationsStore.sourceFilter
+    ? "No notifications for this source."
+    : "No notifications yet.";
+});
 
 // Configure marked for safe rendering
 marked.setOptions({
@@ -151,6 +176,21 @@ function onSourceFilterChange(event) {
   notificationsStore.setSourceFilter(event.target.value);
 }
 
+function onReadFilterChange(event) {
+  notificationsStore.setReadFilter(event.target.value);
+}
+
+function toggleRead(n) {
+  notificationsStore.markRead(n.id, !n.read);
+}
+
+function toggleExpand(n) {
+  n._expanded = !n._expanded;
+  if (n._expanded && !n.read) {
+    notificationsStore.markRead(n.id, true);
+  }
+}
+
 function confirmDeleteAll() {
   if (confirm("Delete all notifications? This cannot be undone.")) {
     notificationsStore.deleteAllNotifications();
@@ -185,7 +225,12 @@ onMounted(async () => {
   margin: 0;
 }
 
-.source-filter {
+.filters {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.page-actions select {
   font-size: var(--font-sm);
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
@@ -200,6 +245,14 @@ onMounted(async () => {
 
 .notification-card {
   margin: 0;
+}
+
+.notification-card.unread {
+  border-left: 3px solid var(--color-primary);
+}
+
+.notification-card.unread h3 {
+  font-weight: 600;
 }
 
 .notification-header {
@@ -238,6 +291,24 @@ onMounted(async () => {
 .delete-btn:hover {
   color: var(--color-danger);
   background: var(--color-danger-bg, rgba(220, 53, 69, 0.1));
+}
+
+.read-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: var(--space-xs);
+  margin: 0;
+  font-size: var(--font-sm);
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.read-btn:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 
 .notification-meta {

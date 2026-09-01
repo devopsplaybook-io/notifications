@@ -10,26 +10,45 @@ import { Notification } from "../model/Notification";
 
 const logger = OTelLogger().createModuleLogger(path.basename(__filename));
 
+/** Read-state filter: "all" (default), "unread" or "read". */
+export type NotificationReadFilter = "all" | "unread" | "read";
+
+/** Map a DB row to a Notification with a normalized boolean read field. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeRead(row: any): Notification {
+  return { ...row, read: !!row.read };
+}
+
 export async function NotificationsDataList(
   context: Span,
   limit = 50,
   offset = 0,
   source = "",
+  read: NotificationReadFilter = "all",
 ): Promise<Notification[]> {
   const span = OTelTracer().startSpan("NotificationsDataList", context);
   try {
+    const conditions: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const params: any[] = [];
     if (source) {
-      return await DbUtilsQuerySQL(
-        span,
-        "SELECT * FROM notifications WHERE source = ? ORDER BY createdAt DESC LIMIT ? OFFSET ?",
-        [source, limit, offset],
-      );
+      conditions.push("source = ?");
+      params.push(source);
     }
-    return await DbUtilsQuerySQL(
+    // "read"/"NOT read" work on both SQLite (0/1) and Postgres (BOOLEAN)
+    if (read === "unread") {
+      conditions.push("NOT read");
+    } else if (read === "read") {
+      conditions.push("read");
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    params.push(limit, offset);
+    const result = await DbUtilsQuerySQL(
       span,
-      "SELECT * FROM notifications ORDER BY createdAt DESC LIMIT ? OFFSET ?",
-      [limit, offset],
+      `SELECT * FROM notifications ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+      params,
     );
+    return result.map(normalizeRead);
   } finally {
     span.end();
   }
@@ -61,7 +80,7 @@ export async function NotificationsDataGet(
       "SELECT * FROM notifications WHERE id = ?",
       [id],
     );
-    return result.length > 0 ? result[0] : null;
+    return result.length > 0 ? normalizeRead(result[0]) : null;
   } finally {
     span.end();
   }
@@ -77,7 +96,7 @@ export async function NotificationsDataAdd(
     notification.createdAt = new Date().toISOString();
     await DbUtilsExecSQL(
       span,
-      "INSERT INTO notifications (id, title, body, source, severity, data, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO notifications (id, title, body, source, severity, data, createdAt, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [
         notification.id,
         notification.title,
@@ -86,6 +105,7 @@ export async function NotificationsDataAdd(
         notification.severity,
         notification.data,
         notification.createdAt,
+        notification.read ? 1 : 0,
       ],
     );
     logger.info(`Notification added: ${notification.title}`, span);
@@ -98,22 +118,48 @@ export async function NotificationsDataAdd(
 export async function NotificationsDataCount(
   context: Span,
   source = "",
+  read: NotificationReadFilter = "all",
 ): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataCount", context);
   try {
+    const conditions: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const params: any[] = [];
     if (source) {
-      const result = await DbUtilsQuerySQL(
-        span,
-        "SELECT COUNT(*) as count FROM notifications WHERE source = ?",
-        [source],
-      );
-      return result.length > 0 ? result[0].count : 0;
+      conditions.push("source = ?");
+      params.push(source);
     }
+    if (read === "unread") {
+      conditions.push("NOT read");
+    } else if (read === "read") {
+      conditions.push("read");
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const result = await DbUtilsQuerySQL(
       span,
-      "SELECT COUNT(*) as count FROM notifications",
+      `SELECT COUNT(*) as count FROM notifications ${where}`,
+      params,
     );
     return result.length > 0 ? result[0].count : 0;
+  } finally {
+    span.end();
+  }
+}
+
+export async function NotificationsDataUpdateRead(
+  context: Span,
+  id: string,
+  read: boolean,
+): Promise<boolean> {
+  const span = OTelTracer().startSpan("NotificationsDataUpdateRead", context);
+  try {
+    const changes = await DbUtilsExecSQL(
+      span,
+      "UPDATE notifications SET read = ? WHERE id = ?",
+      [read ? 1 : 0, id],
+    );
+    logger.info(`Notification read state updated: ${id} -> ${read}`, span);
+    return changes > 0;
   } finally {
     span.end();
   }
