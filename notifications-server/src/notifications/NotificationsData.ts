@@ -165,6 +165,39 @@ export async function NotificationsDataUpdateRead(
   }
 }
 
+export async function NotificationsDataUpdateReadAll(
+  context: Span,
+  source = "",
+  read: NotificationReadFilter = "all",
+): Promise<number> {
+  const span = OTelTracer().startSpan("NotificationsDataUpdateReadAll", context);
+  try {
+    const conditions: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const params: any[] = [];
+    if (source) {
+      conditions.push("source = ?");
+      params.push(source);
+    }
+    // "read"/"NOT read" work on both SQLite (0/1) and Postgres (BOOLEAN)
+    if (read === "unread") {
+      conditions.push("NOT read");
+    } else if (read === "read") {
+      conditions.push("read");
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const changes = await DbUtilsExecSQL(
+      span,
+      `UPDATE notifications SET read = ? ${where}`,
+      [1, ...params],
+    );
+    logger.info(`Marked ${changes} notification(s) as read`, span);
+    return changes;
+  } finally {
+    span.end();
+  }
+}
+
 export async function NotificationsDataDelete(
   context: Span,
   id: string,

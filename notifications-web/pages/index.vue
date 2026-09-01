@@ -36,8 +36,12 @@
             </option>
           </select>
         </div>
-        <button class="outline secondary" @click="confirmDeleteAll">
-          <i class="bi bi-trash3"></i> Clear all
+        <button
+          class="outline secondary"
+          :disabled="notificationsStore.notifications.length === 0"
+          @click="markAllRead"
+        >
+          <i class="bi bi-check2-all"></i> Mark all as read
         </button>
       </div>
 
@@ -191,10 +195,8 @@ function toggleExpand(n) {
   }
 }
 
-function confirmDeleteAll() {
-  if (confirm("Delete all notifications? This cannot be undone.")) {
-    notificationsStore.deleteAllNotifications();
-  }
+function markAllRead() {
+  notificationsStore.markAllRead();
 }
 
 onMounted(async () => {
@@ -235,6 +237,7 @@ onMounted(async () => {
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
   width: auto;
+  min-width: 9rem;
 }
 
 #notifications-list {
@@ -245,9 +248,11 @@ onMounted(async () => {
 
 .notification-card {
   margin: 0;
+  background: var(--color-bg-subtle);
 }
 
 .notification-card.unread {
+  background: var(--color-primary-light);
   border-left: 3px solid var(--color-primary);
 }
 
@@ -271,7 +276,7 @@ onMounted(async () => {
 .notification-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   flex-shrink: 0;
 }
 

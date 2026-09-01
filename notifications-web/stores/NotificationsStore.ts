@@ -65,19 +65,27 @@ export const NotificationsStore = defineStore("NotificationsStore", {
           { read },
           headers,
         );
-        const idx = this.notifications.findIndex((n: any) => n.id === id);
-        if (idx === -1) return;
-        this.notifications[idx].read = read;
-        // Drop the item when it no longer matches the active filter
-        if (
-          (this.readFilter === "unread" && read) ||
-          (this.readFilter === "read" && !read)
-        ) {
-          this.notifications.splice(idx, 1);
-          this.total = Math.max(0, this.total - 1);
+        // Update in place: filtering only applies on load and filter change
+        const notification = this.notifications.find((n: any) => n.id === id);
+        if (notification) {
+          notification.read = read;
         }
       } catch (err) {
         console.error("Failed to update notification read state", err);
+      }
+    },
+
+    async markAllRead(): Promise<void> {
+      try {
+        const headers = await AuthService.getAuthHeader();
+        let url = `${(await Config.get()).SERVER_URL}/notifications/read-all?read=${this.readFilter}`;
+        if (this.sourceFilter) {
+          url += `&source=${encodeURIComponent(this.sourceFilter)}`;
+        }
+        await axios.put(url, {}, headers);
+        await this.loadNotifications();
+      } catch (err) {
+        console.error("Failed to mark notifications as read", err);
       }
     },
 
@@ -93,23 +101,6 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         await this.loadSources();
       } catch (err) {
         console.error("Failed to delete notification", err);
-      }
-    },
-
-    async deleteAllNotifications(): Promise<void> {
-      try {
-        const headers = await AuthService.getAuthHeader();
-        await axios.delete(
-          `${(await Config.get()).SERVER_URL}/notifications`,
-          headers,
-        );
-        this.notifications = [];
-        this.total = 0;
-        this.sources = [];
-        this.sourceFilter = "";
-        this.readFilter = "unread";
-      } catch (err) {
-        console.error("Failed to delete all notifications", err);
       }
     },
   },

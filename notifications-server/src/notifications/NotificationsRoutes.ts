@@ -8,6 +8,7 @@ import {
   NotificationsDataDeleteAll,
   NotificationsDataSources,
   NotificationsDataUpdateRead,
+  NotificationsDataUpdateReadAll,
   NotificationReadFilter,
 } from "./NotificationsData";
 import { AuthGetUserSession } from "../users/Auth";
@@ -153,6 +154,31 @@ export class NotificationsRoutes {
         return res.status(404).send({ error: "Notification not found" });
       }
       return res.status(200).send({ success: true });
+    });
+
+    // Mark all notifications matching the filters as read (requires user auth)
+    interface PutNotificationsReadAll extends RequestGenericInterface {
+      Querystring: {
+        source?: string;
+        read?: string;
+      };
+    }
+    fastify.put<PutNotificationsReadAll>("/read-all", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated) {
+        return res.status(403).send({ error: "Access Denied" });
+      }
+      const source = req.query.source || "";
+      const read: NotificationReadFilter =
+        req.query.read === "unread" || req.query.read === "read"
+          ? req.query.read
+          : "all";
+      const updated = await NotificationsDataUpdateReadAll(
+        OTelRequestSpan(req),
+        source,
+        read,
+      );
+      return res.status(200).send({ success: true, updated });
     });
 
     // Delete all notifications (requires user auth)
