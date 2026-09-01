@@ -57,7 +57,7 @@
         <article
           v-for="n in notificationsStore.notifications"
           :key="n.id"
-          :class="['notification-card', { unread: !n.read }]"
+          :class="['notification-card', { unread: !n.read, read: n.read }]"
         >
           <header>
             <div class="notification-header">
@@ -75,13 +75,6 @@
                   @click="toggleRead(n)"
                 >
                   <i :class="n.read ? 'bi bi-envelope' : 'bi bi-envelope-open'"></i>
-                </button>
-                <button
-                  class="delete-btn"
-                  title="Delete"
-                  @click="deleteNotification(n.id)"
-                >
-                  <i class="bi bi-x-lg"></i>
                 </button>
               </div>
             </div>
@@ -172,10 +165,6 @@ function isLongContent(text) {
   return text.length > 500 || text.split("\n").length > 10;
 }
 
-async function deleteNotification(id) {
-  await notificationsStore.deleteNotification(id);
-}
-
 function onSourceFilterChange(event) {
   notificationsStore.setSourceFilter(event.target.value);
 }
@@ -225,6 +214,10 @@ onMounted(async () => {
   font-size: var(--font-sm);
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .filters {
@@ -242,22 +235,26 @@ onMounted(async () => {
 
 #notifications-list {
   display: grid;
-  gap: var(--space-sm);
+  gap: var(--space-xl);
   padding: var(--space-sm);
 }
 
 .notification-card {
   margin: 0;
-  background: var(--color-bg-subtle);
 }
 
 .notification-card.unread {
-  background: var(--color-primary-light);
   border-left: 3px solid var(--color-primary);
 }
 
 .notification-card.unread h3 {
   font-weight: 600;
+}
+
+.notification-card.read h3,
+.notification-card.read .notification-meta,
+.notification-card.read .notification-body {
+  opacity: 0.6;
 }
 
 .notification-header {
@@ -278,24 +275,6 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-sm);
   flex-shrink: 0;
-}
-
-.delete-btn {
-  background: none;
-  border: none;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  padding: var(--space-xs);
-  margin: 0;
-  font-size: var(--font-sm);
-  line-height: 1;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
-}
-
-.delete-btn:hover {
-  color: var(--color-danger);
-  background: var(--color-danger-bg, rgba(220, 53, 69, 0.1));
 }
 
 .read-btn {
