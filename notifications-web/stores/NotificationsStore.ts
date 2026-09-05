@@ -8,6 +8,7 @@ export const NotificationsStore = defineStore("NotificationsStore", {
     total: 0,
     sources: [] as string[],
     sourceFilter: "",
+    readFilter: "unread",
     loading: false,
     loaded: false,
   }),
@@ -18,7 +19,7 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       this.loading = true;
       try {
         const headers = await AuthService.getAuthHeader();
-        let url = `${(await Config.get()).SERVER_URL}/notifications?limit=50&offset=0`;
+        let url = `${(await Config.get()).SERVER_URL}/notifications?limit=50&offset=0&read=${this.readFilter}`;
         if (this.sourceFilter) {
           url += `&source=${encodeURIComponent(this.sourceFilter)}`;
         }
@@ -51,36 +52,43 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       await this.loadNotifications();
     },
 
-    async deleteNotification(id: string): Promise<void> {
+    async setReadFilter(read: string): Promise<void> {
+      this.readFilter = read;
+      await this.loadNotifications();
+    },
+
+    async markRead(id: string, read: boolean): Promise<void> {
       try {
         const headers = await AuthService.getAuthHeader();
-        await axios.delete(
-          `${(await Config.get()).SERVER_URL}/notifications/${id}`,
+        await axios.put(
+          `${(await Config.get()).SERVER_URL}/notifications/${id}/read`,
+          { read },
           headers,
         );
-        this.notifications = this.notifications.filter((n: any) => n.id !== id);
-        this.total--;
-        await this.loadSources();
+        // Update in place: filtering only applies on load and filter change
+        const notification = this.notifications.find((n: any) => n.id === id);
+        if (notification) {
+          notification.read = read;
+        }
       } catch (err) {
-        console.error("Failed to delete notification", err);
+        console.error("Failed to update notification read state", err);
       }
     },
 
-    async deleteAllNotifications(): Promise<void> {
+    async markAllRead(): Promise<void> {
       try {
         const headers = await AuthService.getAuthHeader();
-        await axios.delete(
-          `${(await Config.get()).SERVER_URL}/notifications`,
-          headers,
-        );
-        this.notifications = [];
-        this.total = 0;
-        this.sources = [];
-        this.sourceFilter = "";
+        let url = `${(await Config.get()).SERVER_URL}/notifications/read-all?read=${this.readFilter}`;
+        if (this.sourceFilter) {
+          url += `&source=${encodeURIComponent(this.sourceFilter)}`;
+        }
+        await axios.put(url, {}, headers);
+        await this.loadNotifications();
       } catch (err) {
-        console.error("Failed to delete all notifications", err);
+        console.error("Failed to mark notifications as read", err);
       }
     },
+
   },
 });
 

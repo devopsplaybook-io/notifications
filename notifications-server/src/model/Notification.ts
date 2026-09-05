@@ -6,4 +6,5 @@ export class Notification {
   severity = "info";
   data = "{}";
   createdAt = "";
+  read = false;
 }
