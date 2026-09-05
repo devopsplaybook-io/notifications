@@ -1,6 +1,17 @@
+import axios from "axios";
 import { jwtDecode } from "jwt-decode";
 
 const AUTH_TOKEN_KEY = "auth_token";
+
+// Sliding session: store tokens renewed by the server ("X-Renewed-Token"
+// response header) so active users stay logged in
+axios.interceptors.response.use((response) => {
+  const renewedToken = response.headers["x-renewed-token"];
+  if (renewedToken) {
+    AuthService.saveToken(renewedToken);
+  }
+  return response;
+});
 
 export class AuthService {
   public static async isAuthenticated(): Promise<boolean> {
