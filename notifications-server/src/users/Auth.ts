@@ -54,12 +54,49 @@ export async function AuthInit(context: Span, configIn: Config) {
 export async function AuthGenerateJWT(user: User): Promise<string> {
   return jwt.sign(
     {
-      exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+      exp: Math.floor(Date.now() / 1000) + config.JWT_VALIDITY_DURATION,
       userId: user.id,
       userName: user.name,
     },
     config.JWT_KEY,
   );
+}
+
+/** Minimum age of a token before it gets renewed (24h). */
+const AUTH_RENEWAL_THRESHOLD_SECONDS = 24 * 60 * 60;
+
+/**
+ * Re-issue a fresh session token for an authenticated request whose token is
+ * older than the renewal threshold.  The renewed token is sent via the
+ * "X-Renewed-Token" response header and picked up by the web client, keeping
+ * active sessions alive (sliding session).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function AuthRenewSession(req: any, res: any): Promise<void> {
+  if (!req.headers.authorization) {
+    return;
+  }
+  try {
+    const parts = req.headers.authorization.split(" ");
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return;
+    }
+    const info = jwt.verify(parts[1], config.JWT_KEY) as jwt.JwtPayload;
+    const issuedAt = info.iat ?? 0;
+    if (
+      Math.floor(Date.now() / 1000) - issuedAt <
+      AUTH_RENEWAL_THRESHOLD_SECONDS
+    ) {
+      return;
+    }
+    const user = new User();
+    user.id = info.userId;
+    user.name = info.userName;
+    res.header("X-Renewed-Token", await AuthGenerateJWT(user));
+    logger.info(`Session renewed for user: ${user.name}`);
+  } catch {
+    // Invalid or expired tokens are handled by the regular auth checks
+  }
 }
 
 export async function AuthMustBeAuthenticated(

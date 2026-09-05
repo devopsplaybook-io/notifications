@@ -14,7 +14,7 @@ import {
   OTelSetTracer,
   OTelTracer,
 } from "./OTelContext";
-import { AuthGetUserSession, AuthInit } from "./users/Auth";
+import { AuthGetUserSession, AuthInit, AuthRenewSession } from "./users/Auth";
 import { UsersRoutes } from "./users/UsersRoutes";
 import { NotificationsRoutes } from "./notifications/NotificationsRoutes";
 import { ApiTokensRoutes } from "./apitokens/ApiTokensRoutes";
@@ -62,8 +62,14 @@ Promise.resolve().then(async () => {
     fastify.register(cors, {
       origin: config.CORS_POLICY_ORIGIN,
       methods: "GET,PUT,POST,DELETE",
+      exposedHeaders: ["X-Renewed-Token"],
     });
   }
+
+  // Sliding session: renew tokens older than 24h on any authenticated request
+  fastify.addHook("onSend", async (req, res) => {
+    await AuthRenewSession(req, res);
+  });
 
   StandardTracerFastifyRegisterHooks(fastify, OTelTracer(), OTelLogger(), {
     ignoreList: ["GET-/api/status"],
