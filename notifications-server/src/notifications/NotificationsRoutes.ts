@@ -1,4 +1,4 @@
-import { FastifyInstance, RequestGenericInterface } from "fastify";
+import { FastifyInstance, FastifyRequest, RequestGenericInterface } from "fastify";
 import { OTelRequestSpan } from "../OTelContext";
 import {
   NotificationsDataList,
@@ -16,9 +16,23 @@ import { ApiTokensValidate } from "../apitokens/ApiTokensData";
 import { Notification } from "../model/Notification";
 import { PushSendToAll } from "./PushService";
 
+/**
+ * Accept the request when it carries a valid API token (Authorization: Bearer).
+ * Used as a fallback on read-only routes, which stay open to both user
+ * sessions and API tokens.
+ */
+async function IsApiTokenAuthorized(req: FastifyRequest): Promise<boolean> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return false;
+  }
+  const token = authHeader.replace("Bearer ", "");
+  return ApiTokensValidate(OTelRequestSpan(req), token);
+}
+
 export class NotificationsRoutes {
   public async getRoutes(fastify: FastifyInstance): Promise<void> {
-    // List notifications (requires user auth)
+    // List notifications (requires user session or API token)
     interface GetNotifications extends RequestGenericInterface {
       Querystring: {
         limit?: string;
@@ -29,7 +43,7 @@ export class NotificationsRoutes {
     }
     fastify.get<GetNotifications>("/", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
-      if (!userSession.isAuthenticated) {
+      if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
         return res.status(403).send({ error: "Access Denied" });
       }
       const limit = parseInt(req.query.limit) || 50;
@@ -54,10 +68,10 @@ export class NotificationsRoutes {
       return res.status(200).send({ notifications, total });
     });
 
-    // List distinct notification sources (requires user auth)
+    // List distinct notification sources (requires user session or API token)
     fastify.get("/sources", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
-      if (!userSession.isAuthenticated) {
+      if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
         return res.status(403).send({ error: "Access Denied" });
       }
       const sources = await NotificationsDataSources(OTelRequestSpan(req));
