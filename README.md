@@ -5,7 +5,7 @@ Centralized notification service for the DevOpsPlaybook.io ecosystem.
 ## Features
 
 - **Notification API**: Define API where notifications can be sent from other applications
-- **API Token Authentication**: Secure API access with configurable tokens
+- **API Token Authentication**: Secure API access with configurable tokens (push and read notifications)
 - **User Login**: Users can login and see past notifications (newest first)
 - **PWA Push Notifications**: Device notifications when a new notification is received
 
