@@ -223,6 +223,7 @@ onMounted(async () => {
 .filters {
   display: flex;
   gap: var(--space-sm);
+  min-width: 0;
 }
 
 .page-actions select {
@@ -268,6 +269,7 @@ onMounted(async () => {
   margin: 0;
   font-size: var(--font-lg);
   flex: 1;
+  overflow-wrap: anywhere;
 }
 
 .notification-actions {
@@ -301,6 +303,7 @@ onMounted(async () => {
   font-size: var(--font-sm);
   color: var(--color-text-muted);
   margin-top: var(--space-xs);
+  overflow-wrap: anywhere;
 }
 
 .notification-meta i {
@@ -313,6 +316,7 @@ onMounted(async () => {
 
 .notification-content {
   position: relative;
+  overflow-wrap: anywhere;
 }
 
 .notification-content.truncatable {
