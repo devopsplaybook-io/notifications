@@ -5,7 +5,10 @@
       <p>Please login to view notifications.</p>
     </div>
 
-    <div v-else-if="notificationsStore.loading" class="loading-indicator"></div>
+    <div
+      v-else-if="notificationsStore.loading && !notificationsStore.loaded"
+      class="loading-indicator"
+    ></div>
 
     <div v-else>
       <div class="page-actions">
@@ -43,7 +46,33 @@
         >
           <i class="bi bi-check2-all"></i> Mark all as read
         </button>
+        <button class="outline secondary" @click="refreshNotifications">
+          <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <button
+          v-if="pushSupported"
+          class="outline secondary"
+          :disabled="pushBusy"
+          @click="togglePush"
+        >
+          <i :class="pushSubscribed ? 'bi bi-bell-slash' : 'bi bi-bell'"></i>
+          {{ pushSubscribed ? "Disable push" : "Enable push" }}
+        </button>
+        <button
+          class="outline contrast"
+          :disabled="notificationsStore.total === 0"
+          @click="deleteAll"
+        >
+          <i class="bi bi-trash"></i> Delete all
+        </button>
       </div>
+      <p v-if="notificationsStore.loaded" class="result-count">
+        Showing {{ notificationsStore.notifications.length }} of
+        {{ notificationsStore.total }} notifications
+        <span v-if="notificationsStore.unreadCount > 0">
+          · {{ notificationsStore.unreadCount }} unread</span
+        >
+      </p>
 
       <div
         v-if="notificationsStore.notifications.length === 0"
@@ -76,6 +105,14 @@
                 >
                   <i :class="n.read ? 'bi bi-envelope' : 'bi bi-envelope-open'"></i>
                 </button>
+                <button
+                  class="read-btn"
+                  title="Delete notification"
+                  aria-label="Delete notification"
+                  @click="deleteNotification(n.id)"
+                >
+                  <i class="bi bi-trash"></i>
+                </button>
               </div>
             </div>
             <div class="notification-meta">
@@ -106,6 +143,19 @@
           </section>
         </article>
       </div>
+      <div
+        v-if="notificationsStore.notifications.length < notificationsStore.total"
+        class="load-more"
+      >
+        <button
+          class="outline secondary"
+          :disabled="notificationsStore.loading"
+          @click="notificationsStore.loadNotifications(true)"
+        >
+          {{ notificationsStore.loading ? "Loading..." : "Load more" }}
+        </button>
+      </div>
+      <p v-if="pushError" class="push-error">{{ pushError }}</p>
     </div>
   </div>
 </template>
@@ -113,9 +163,14 @@
 <script setup>
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { PushService } from "~/services/PushService";
 
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
+const pushSupported = ref(false);
+const pushSubscribed = ref(false);
+const pushBusy = ref(false);
+const pushError = ref("");
 
 const emptyMessage = computed(() => {
   if (notificationsStore.readFilter === "unread") {
@@ -188,10 +243,47 @@ function markAllRead() {
   notificationsStore.markAllRead();
 }
 
+async function refreshNotifications() {
+  await Promise.all([
+    notificationsStore.loadSources(),
+    notificationsStore.loadNotifications(),
+  ]);
+}
+
+async function deleteNotification(id) {
+  if (window.confirm("Delete this notification?")) {
+    await notificationsStore.deleteNotification(id);
+  }
+}
+
+async function deleteAll() {
+  if (window.confirm("Delete all notifications? This cannot be undone.")) {
+    await notificationsStore.deleteAll();
+  }
+}
+
+async function togglePush() {
+  pushBusy.value = true;
+  pushError.value = "";
+  try {
+    const success = pushSubscribed.value
+      ? await PushService.unsubscribe()
+      : await PushService.subscribe();
+    if (!success) {
+      pushError.value = "Unable to update push notification settings.";
+      return;
+    }
+    pushSubscribed.value = !pushSubscribed.value;
+  } finally {
+    pushBusy.value = false;
+  }
+}
+
 onMounted(async () => {
   if (await authenticationStore.ensureAuthenticated()) {
-    notificationsStore.loadSources();
-    notificationsStore.loadNotifications();
+    refreshNotifications();
+    pushSupported.value = await PushService.isSupported();
+    pushSubscribed.value = await PushService.isSubscribed();
   }
 });
 </script>
@@ -208,6 +300,23 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-sm);
   padding: 0 var(--space-sm) var(--space-xs);
+}
+
+.result-count {
+  padding: 0 var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-sm);
+}
+
+.push-error {
+  color: var(--color-danger);
+  padding: 0 var(--space-sm);
 }
 
 .page-actions button {

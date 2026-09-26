@@ -6,11 +6,18 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "lint": "echo TODO",
-    "test": "echo TODO"
+    "lint": "oxlint components pages services stores nuxt.config.ts",
+    "typecheck": "nuxt typecheck",
+    "test": "npm run typecheck && vitest run --coverage"
   },
   "devDependencies": {
-    "nuxt": "^4.5.2"
+    "@types/node": "^26.6.3",
+    "@vitest/coverage-v8": "^5.0.2",
+    "nuxt": "^4.5.2",
+    "oxlint": "^1.83.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2",
+    "vue-tsc": "^3.0.8"
   },
   "dependencies": {
     "@picocss/pico": "^2.1.1",

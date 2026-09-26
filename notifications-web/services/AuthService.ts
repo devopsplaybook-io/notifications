@@ -58,6 +58,7 @@ export class AuthService {
         return {};
       }
     } catch (error) {
+      console.error("Failed to retrieve authentication token", error);
       return {};
     }
   }

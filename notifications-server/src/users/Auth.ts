@@ -1,6 +1,5 @@
 import * as jwt from "jsonwebtoken";
 import * as path from "path";
-import { v4 as uuidv4 } from "uuid";
 import { User } from "../model/User";
 import { UserSession } from "../model/UserSession";
 import { Config } from "../Config";
@@ -14,7 +13,21 @@ import { OTelLogger, OTelTracer } from "../OTelContext";
 const logger = OTelLogger().createModuleLogger(path.basename(__filename));
 let config: Config;
 
+export function AuthValidateJWTKey(key: string): void {
+  if (
+    typeof key !== "string" ||
+    key.length < 32 ||
+    key === "dev" ||
+    new Set(key).size < 10
+  ) {
+    throw new Error(
+      "JWT_KEY must be configured with at least 32 characters and 10 distinct characters",
+    );
+  }
+}
+
 export async function AuthInit(context: Span, configIn: Config) {
+  AuthValidateJWTKey(configIn.JWT_KEY);
   config = configIn;
   const span = OTelTracer().startSpan("AuthInit", context);
   const authKeyRaw = await DbUtilsQuerySQL(
@@ -22,31 +35,18 @@ export async function AuthInit(context: Span, configIn: Config) {
     "SELECT * FROM metadata WHERE type='auth_token'",
   );
 
-  const configHasKey = configIn.JWT_KEY !== "";
-
-  if (configHasKey) {
-    if (authKeyRaw.length === 0) {
-      await DbUtilsExecSQL(
-        span,
-        "INSERT INTO metadata (type, value, dateCreated) VALUES ('auth_token', ?, ?)",
-        [configIn.JWT_KEY, new Date().toISOString()],
-      );
-    } else if (authKeyRaw[0].value !== configIn.JWT_KEY) {
-      await DbUtilsExecSQL(
-        span,
-        "UPDATE metadata SET value = ? WHERE type = 'auth_token'",
-        [configIn.JWT_KEY],
-      );
-    }
-  } else if (authKeyRaw.length === 0) {
-    configIn.JWT_KEY = uuidv4();
+  if (authKeyRaw.length === 0) {
     await DbUtilsExecSQL(
       span,
       "INSERT INTO metadata (type, value, dateCreated) VALUES ('auth_token', ?, ?)",
       [configIn.JWT_KEY, new Date().toISOString()],
     );
-  } else {
-    configIn.JWT_KEY = authKeyRaw[0].value;
+  } else if (authKeyRaw[0].value !== configIn.JWT_KEY) {
+    await DbUtilsExecSQL(
+      span,
+      "UPDATE metadata SET value = ? WHERE type = 'auth_token'",
+      [configIn.JWT_KEY],
+    );
   }
   span.end();
 }
@@ -99,34 +99,18 @@ export async function AuthRenewSession(req: any, res: any): Promise<void> {
   }
 }
 
-export async function AuthMustBeAuthenticated(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  req: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  res: any,
-): Promise<void> {
-  let authenticated = false;
-  if (req.headers.authorization) {
-    try {
-      const parts = req.headers.authorization.split(" ");
-      if (parts.length === 2 && parts[0] === "Bearer") {
-        jwt.verify(parts[1], config.JWT_KEY);
-        authenticated = true;
-      }
-    } catch {
-      authenticated = false;
-    }
-  }
-  if (!authenticated) {
-    res.status(403).send({ error: "Access Denied" });
-    throw new Error("Access Denied");
-  }
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function AuthGetUserSession(req: any): Promise<UserSession> {
   const userSession: UserSession = { isAuthenticated: false, userId: null };
   if (req.headers.authorization) {
+    const bearerToken = req.headers.authorization.split(" ")[1];
+    if (
+      !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(
+        bearerToken || "",
+      )
+    ) {
+      return userSession;
+    }
     try {
       const parts = req.headers.authorization.split(" ");
       if (parts.length !== 2 || parts[0] !== "Bearer") {
@@ -139,7 +123,7 @@ export async function AuthGetUserSession(req: any): Promise<UserSession> {
       userSession.userId = info.userId;
       userSession.isAuthenticated = true;
     } catch (err) {
-      logger.error("Error Getting User Session", err);
+      logger.warn(`Invalid session token: ${(err as Error).name}`);
     }
   }
   return userSession;

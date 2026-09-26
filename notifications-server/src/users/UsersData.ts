@@ -56,7 +56,7 @@ export async function UsersDataAdd(context: Span, user: User): Promise<void> {
     user.id = uuidv4();
     await DbUtilsExecSQL(
       span,
-      "INSERT INTO users (id, name, passwordEncrypted) VALUES (?, ?, ?)",
+      'INSERT INTO users (id, name, "passwordEncrypted") VALUES (?, ?, ?)',
       [user.id, user.name, user.passwordEncrypted],
     );
     logger.info(`User added: ${user.name}`, span);
@@ -73,7 +73,7 @@ export async function UsersDataUpdate(
   try {
     await DbUtilsExecSQL(
       span,
-      "UPDATE users SET name = ?, passwordEncrypted = ? WHERE id = ?",
+      'UPDATE users SET name = ?, "passwordEncrypted" = ? WHERE id = ?',
       [user.name, user.passwordEncrypted, user.id],
     );
   } finally {

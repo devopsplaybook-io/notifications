@@ -1,6 +1,5 @@
 {
-  "CORS_POLICY_ORIGIN": "*",
-  "JWT_KEY": "dev",
+  "CORS_POLICY_ORIGIN": "https://notifications.didierhoarau.cloud",
   "DATABASE_TYPE": "sqlite",
   "LOG_LEVEL": "debug"
 }

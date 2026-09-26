@@ -12,7 +12,13 @@
       <li v-if="authenticationStore.isAuthenticated">
         <NuxtLink to="/" :class="activeRoute == '' ? 'active' : 'inactive'"
           ><i class="bi bi-bell-fill"></i>
-          <span class="nav-label">Notifications</span></NuxtLink
+          <span class="nav-label">Notifications</span>
+          <span
+            v-if="notificationsStore.unreadCount > 0"
+            class="unread-badge"
+            :aria-label="`${notificationsStore.unreadCount} unread notifications`"
+            >{{ notificationsStore.unreadCount }}</span
+          ></NuxtLink
         >
       </li>
       <li v-if="authenticationStore.isAuthenticated">
@@ -44,6 +50,7 @@
 import { AuthService } from "~~/services/AuthService";
 import { PreferencesService } from "~/services/PreferencesService";
 const authenticationStore = AuthenticationStore();
+const notificationsStore = NotificationsStore();
 
 function toggleTheme() {
   PreferencesService.toggleTheme();
@@ -68,6 +75,7 @@ export default {
   async created() {
     this.routeUpdated(this.$route);
     if (await AuthenticationStore().ensureAuthenticated()) {
+      NotificationsStore().loadUnreadCount();
       setTimeout(async () => {
         axios
           .post(
@@ -116,6 +124,20 @@ export default {
 
 .menu-links i {
   margin-right: var(--space-sm);
+}
+
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin-left: var(--space-xs);
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.7rem;
 }
 
 .theme-toggle {

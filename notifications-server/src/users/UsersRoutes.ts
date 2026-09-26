@@ -4,8 +4,10 @@ import { OTelRequestSpan } from "../OTelContext";
 import { AuthGenerateJWT, AuthGetUserSession } from "./Auth";
 import {
   UserPasswordCheckPassword,
+  UserPasswordCheckUnknownUser,
   UserPasswordSetPassword,
 } from "./UserPassword";
+import { AuthRateLimit } from "./AuthRateLimit";
 import {
   UsersDataAdd,
   UsersDataGet,
@@ -13,6 +15,8 @@ import {
   UsersDataList,
   UsersDataUpdate,
 } from "./UsersData";
+
+let creatingInitialUser = false;
 
 export class UsersRoutes {
   public async getRoutes(fastify: FastifyInstance): Promise<void> {
@@ -31,10 +35,19 @@ export class UsersRoutes {
       };
     }
     fastify.post<PostSession>("/session", async (req, res) => {
+      if (!AuthRateLimit(req, req.body?.name, "login")) {
+        return res
+          .header("Retry-After", "60")
+          .status(429)
+          .send({ error: "Too many authentication attempts" });
+      }
       let user: User;
       const userSession = await AuthGetUserSession(req);
       if (userSession.isAuthenticated) {
         user = await UsersDataGet(OTelRequestSpan(req), userSession.userId);
+        if (!user) {
+          return res.status(401).send({ error: "Authentication Failed" });
+        }
         return res
           .status(201)
           .send({ success: true, token: await AuthGenerateJWT(user) });
@@ -48,6 +61,10 @@ export class UsersRoutes {
       }
       user = await UsersDataGetByName(OTelRequestSpan(req), req.body.name);
       if (!user) {
+        await UserPasswordCheckUnknownUser(
+          OTelRequestSpan(req),
+          req.body.password,
+        );
         return res.status(403).send({ error: "Authentication Failed" });
       } else if (
         await UserPasswordCheckPassword(
@@ -71,32 +88,41 @@ export class UsersRoutes {
       };
     }
     fastify.post<PostUser>("/", async (req, res) => {
-      let isInitialized = true;
-      if ((await UsersDataList(OTelRequestSpan(req))).length === 0) {
-        isInitialized = false;
+      if (!AuthRateLimit(req, req.body?.name, "registration")) {
+        return res
+          .header("Retry-After", "60")
+          .status(429)
+          .send({ error: "Too many registration attempts" });
       }
-      const userSession = await AuthGetUserSession(req);
-      if (isInitialized && !userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+      if (creatingInitialUser) {
+        return res.status(409).send({ error: "Initial user creation in progress" });
       }
-      const newUser = new User();
-      if (!req.body.name) {
-        return res.status(400).send({ error: "Missing: Name" });
+      creatingInitialUser = true;
+      try {
+        if ((await UsersDataList(OTelRequestSpan(req))).length > 0) {
+          return res.status(403).send({ error: "Account creation is closed" });
+        }
+        const newUser = new User();
+        if (!req.body.name) {
+          return res.status(400).send({ error: "Missing: Name" });
+        }
+        if (!req.body.password) {
+          return res.status(400).send({ error: "Missing: Password" });
+        }
+        if (await UsersDataGetByName(OTelRequestSpan(req), req.body.name)) {
+          return res.status(400).send({ error: "Username Already Exists" });
+        }
+        newUser.name = req.body.name;
+        await UserPasswordSetPassword(
+          OTelRequestSpan(req),
+          newUser,
+          req.body.password,
+        );
+        await UsersDataAdd(OTelRequestSpan(req), newUser);
+        return res.status(201).send({});
+      } finally {
+        creatingInitialUser = false;
       }
-      if (!req.body.password) {
-        return res.status(400).send({ error: "Missing: Password" });
-      }
-      if (await UsersDataGetByName(OTelRequestSpan(req), req.body.name)) {
-        return res.status(400).send({ error: "Username Already Exists" });
-      }
-      newUser.name = req.body.name;
-      await UserPasswordSetPassword(
-        OTelRequestSpan(req),
-        newUser,
-        req.body.password,
-      );
-      await UsersDataAdd(OTelRequestSpan(req), newUser);
-      res.status(201).send({});
     });
 
     interface PutNewPassword extends RequestGenericInterface {
