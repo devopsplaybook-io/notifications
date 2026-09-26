@@ -3,6 +3,8 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { OTelTracer } from "../OTelContext";
 import { User } from "../model/User";
 
+const dummyPasswordHash = bcrypt.hash("invalid-notifications-login", 10);
+
 export async function UserPasswordSetPassword(
   context: Span,
   user: User,
@@ -25,6 +27,18 @@ export async function UserPasswordCheckPassword(
   const span = OTelTracer().startSpan("UserPasswordCheckPassword", context);
   try {
     return await bcrypt.compare(password, user.passwordEncrypted);
+  } finally {
+    span.end();
+  }
+}
+
+export async function UserPasswordCheckUnknownUser(
+  context: Span,
+  password: string,
+): Promise<void> {
+  const span = OTelTracer().startSpan("UserPasswordCheckUnknownUser", context);
+  try {
+    await bcrypt.compare(password, await dummyPasswordHash);
   } finally {
     span.end();
   }

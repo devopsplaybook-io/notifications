@@ -5,10 +5,11 @@ import {
   DbUtilsExecSQL,
   DbUtilsQuerySQL,
 } from "@devopsplaybook.io/common-utils";
-import { OTelLogger, OTelTracer } from "../OTelContext";
+import { OTelLogger, OTelMeter, OTelTracer } from "../OTelContext";
 import { Notification } from "../model/Notification";
 
 const logger = OTelLogger().createModuleLogger(path.basename(__filename));
+let notificationsCreatedCounter: { add: (value: number) => void };
 
 /** Read-state filter: "all" (default), "unread" or "read". */
 export type NotificationReadFilter = "all" | "unread" | "read";
@@ -45,7 +46,7 @@ export async function NotificationsDataList(
     params.push(limit, offset);
     const result = await DbUtilsQuerySQL(
       span,
-      `SELECT * FROM notifications ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM notifications ${where} ORDER BY "createdAt" DESC LIMIT ? OFFSET ?`,
       params,
     );
     return result.map(normalizeRead);
@@ -96,7 +97,7 @@ export async function NotificationsDataAdd(
     notification.createdAt = new Date().toISOString();
     await DbUtilsExecSQL(
       span,
-      "INSERT INTO notifications (id, title, body, source, severity, data, createdAt, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      'INSERT INTO notifications (id, title, body, source, severity, data, "createdAt", "read") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [
         notification.id,
         notification.title,
@@ -108,6 +109,10 @@ export async function NotificationsDataAdd(
         notification.read ? 1 : 0,
       ],
     );
+    notificationsCreatedCounter ??= OTelMeter().createCounter(
+      "notifications.created",
+    );
+    notificationsCreatedCounter.add(1);
     logger.info(`Notification added: ${notification.title}`, span);
     return notification;
   } finally {
@@ -140,7 +145,7 @@ export async function NotificationsDataCount(
       `SELECT COUNT(*) as count FROM notifications ${where}`,
       params,
     );
-    return result.length > 0 ? result[0].count : 0;
+    return result.length > 0 ? Number(result[0].count) : 0;
   } finally {
     span.end();
   }
@@ -204,9 +209,13 @@ export async function NotificationsDataDelete(
 ): Promise<boolean> {
   const span = OTelTracer().startSpan("NotificationsDataDelete", context);
   try {
-    await DbUtilsExecSQL(span, "DELETE FROM notifications WHERE id = ?", [id]);
+    const changes = await DbUtilsExecSQL(
+      span,
+      "DELETE FROM notifications WHERE id = ?",
+      [id],
+    );
     logger.info(`Notification deleted: ${id}`, span);
-    return true;
+    return changes > 0;
   } finally {
     span.end();
   }
@@ -217,10 +226,27 @@ export async function NotificationsDataDeleteAll(
 ): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataDeleteAll", context);
   try {
-    const countBefore = await NotificationsDataCount(span);
-    await DbUtilsExecSQL(span, "DELETE FROM notifications", []);
-    logger.info(`All notifications deleted (${countBefore} records)`, span);
-    return countBefore;
+    const deleted = await DbUtilsExecSQL(span, "DELETE FROM notifications", []);
+    logger.info(`All notifications deleted (${deleted} records)`, span);
+    return deleted;
+  } finally {
+    span.end();
+  }
+}
+
+export async function NotificationsDataPrune(
+  context: Span,
+  cutoff: string,
+): Promise<number> {
+  const span = OTelTracer().startSpan("NotificationsDataPrune", context);
+  try {
+    const deleted = await DbUtilsExecSQL(
+      span,
+      'DELETE FROM notifications WHERE "createdAt" < ?',
+      [cutoff],
+    );
+    logger.info(`Pruned ${deleted} notification(s) older than ${cutoff}`, span);
+    return deleted;
   } finally {
     span.end();
   }

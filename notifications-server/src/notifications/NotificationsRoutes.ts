@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, RequestGenericInterface } from "fastify";
-import { OTelRequestSpan } from "../OTelContext";
+import { OTelLogger, OTelRequestSpan } from "../OTelContext";
 import {
   NotificationsDataList,
   NotificationsDataAdd,
@@ -16,17 +16,48 @@ import { ApiTokensValidate } from "../apitokens/ApiTokensData";
 import { Notification } from "../model/Notification";
 import { PushSendToAll } from "./PushService";
 
+const logger = OTelLogger().createModuleLogger("NotificationsRoutes");
+const toError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
+
+function getBearerToken(header: string | undefined): string | undefined {
+  return header?.match(/^Bearer\s+(\S+)$/i)?.[1];
+}
+
+function parsePagination(value: string | undefined, fallback: number): number {
+  if (value === undefined || !/^-?\d+$/.test(value)) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : fallback;
+}
+
+export function NormalizeNotificationData(data: unknown): string | undefined {
+  if (data === undefined) {
+    return "{}";
+  }
+  let value: unknown = data;
+  if (typeof data === "string") {
+    try {
+      value = JSON.parse(data);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return JSON.stringify(value);
+}
+
 /**
  * Accept the request when it carries a valid API token (Authorization: Bearer).
  * Used as a fallback on read-only routes, which stay open to both user
  * sessions and API tokens.
  */
 async function IsApiTokenAuthorized(req: FastifyRequest): Promise<boolean> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return false;
-  }
-  const token = authHeader.replace("Bearer ", "");
+  const token = getBearerToken(req.headers.authorization);
+  if (!token) return false;
   return ApiTokensValidate(OTelRequestSpan(req), token);
 }
 
@@ -46,8 +77,11 @@ export class NotificationsRoutes {
       if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
         return res.status(403).send({ error: "Access Denied" });
       }
-      const limit = parseInt(req.query.limit) || 50;
-      const offset = parseInt(req.query.offset) || 0;
+      const limit = Math.min(
+        200,
+        Math.max(1, parsePagination(req.query.limit, 50)),
+      );
+      const offset = Math.max(0, parsePagination(req.query.offset, 0));
       const source = req.query.source || "";
       const read: NotificationReadFilter =
         req.query.read === "unread" || req.query.read === "read"
@@ -81,35 +115,64 @@ export class NotificationsRoutes {
     // Create notification via API (requires API token)
     interface PostNotification extends RequestGenericInterface {
       Body: {
-        title: string;
-        body: string;
-        source?: string;
-        severity?: string;
-        data?: string;
+        title?: unknown;
+        body?: unknown;
+        source?: unknown;
+        severity?: unknown;
+        data?: unknown;
       };
     }
     fastify.post<PostNotification>("/", async (req, res) => {
       // Validate API token from Authorization header
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
+      const token = getBearerToken(req.headers.authorization);
+      if (!token) {
         return res.status(401).send({ error: "Missing API token" });
       }
-      const token = authHeader.replace("Bearer ", "");
       const isValid = await ApiTokensValidate(OTelRequestSpan(req), token);
       if (!isValid) {
         return res.status(403).send({ error: "Invalid API token" });
       }
 
-      if (!req.body.title) {
-        return res.status(400).send({ error: "Missing: title" });
+      const body = req.body;
+      const title = body?.title;
+      if (
+        typeof title !== "string" ||
+        title.trim() === "" ||
+        title.length > 1000
+      ) {
+        return res.status(400).send({ error: "Invalid: title" });
+      }
+      const textBody = body.body === undefined ? "" : body.body;
+      if (typeof textBody !== "string") {
+        return res.status(400).send({ error: "Invalid: body" });
+      }
+      const source = body.source === undefined ? "api" : body.source;
+      if (
+        typeof source !== "string" ||
+        source.trim() === "" ||
+        source.length > 200
+      ) {
+        return res.status(400).send({ error: "Invalid: source" });
+      }
+      const severity = body.severity === undefined ? "info" : body.severity;
+      if (
+        typeof severity !== "string" ||
+        severity.trim() === "" ||
+        severity.length > 20
+      ) {
+        return res.status(400).send({ error: "Invalid: severity" });
+      }
+      const data = NormalizeNotificationData(body.data);
+      if (data === undefined) {
+        return res.status(400).send({ error: "Invalid: data must be a JSON object" });
       }
 
       const notification = new Notification();
-      notification.title = req.body.title;
-      notification.body = req.body.body || "";
-      notification.source = req.body.source || "api";
-      notification.severity = req.body.severity || "info";
-      notification.data = req.body.data ? JSON.stringify(req.body.data) : "{}";
+      notification.title = title;
+      notification.body = textBody;
+      notification.source = source;
+      notification.severity = severity;
+      notification.data = data;
 
       const created = await NotificationsDataAdd(
         OTelRequestSpan(req),
@@ -119,9 +182,13 @@ export class NotificationsRoutes {
       // Send push notifications to all subscribed users
       try {
         await PushSendToAll(created);
-      } catch (err) {
+      } catch (error) {
         // Push failure should not fail the API response
-        console.error("Push notification failed:", err);
+        logger.error(
+          "Push notification fan-out failed",
+          toError(error),
+          OTelRequestSpan(req),
+        );
       }
 
       return res.status(201).send(created);
@@ -138,7 +205,13 @@ export class NotificationsRoutes {
       if (!userSession.isAuthenticated) {
         return res.status(403).send({ error: "Access Denied" });
       }
-      await NotificationsDataDelete(OTelRequestSpan(req), req.params.id);
+      const deleted = await NotificationsDataDelete(
+        OTelRequestSpan(req),
+        req.params.id,
+      );
+      if (!deleted) {
+        return res.status(404).send({ error: "Notification not found" });
+      }
       return res.status(200).send({ success: true });
     });
 
