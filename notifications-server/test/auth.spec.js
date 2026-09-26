@@ -1,4 +1,5 @@
-jest.mock("uuid", () => ({ v4: () => "mock-uuid" }));
+const mockAuthError = jest.fn();
+const mockAuthWarn = jest.fn();
 jest.mock("jsonwebtoken", () => ({
   sign: jest.fn(),
   verify: jest.fn(() => {
@@ -11,11 +12,13 @@ jest.mock("@devopsplaybook.io/common-utils", () => ({
 }));
 jest.mock("../dist/OTelContext", () => ({
   OTelTracer: () => ({ startSpan: () => ({ end: jest.fn() }) }),
+  mockAuthError,
+  mockAuthWarn,
   OTelLogger: () => ({
     createModuleLogger: () => ({
       info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      warn: mockAuthWarn,
+      error: mockAuthError,
     }),
   }),
 }));
@@ -23,6 +26,7 @@ jest.mock("../dist/OTelContext", () => ({
 const { AuthGetUserSession, AuthInit, AuthValidateJWTKey } = require("../dist/users/Auth");
 const { AuthRateLimit } = require("../dist/users/AuthRateLimit");
 const { verify } = require("jsonwebtoken");
+const authOtel = require("../dist/OTelContext");
 
 describe("authentication hardening", () => {
   test("rejects missing and weak JWT keys", () => {
@@ -52,6 +56,20 @@ describe("authentication hardening", () => {
     });
     expect(session.isAuthenticated).toBe(false);
     expect(verify).not.toHaveBeenCalled();
+    expect(authOtel.mockAuthError).not.toHaveBeenCalled();
+    expect(authOtel.mockAuthWarn).not.toHaveBeenCalled();
+  });
+
+  test("logs invalid JWTs without an error stack", async () => {
+    authOtel.mockAuthWarn.mockClear();
+    authOtel.mockAuthError.mockClear();
+    await AuthGetUserSession({
+      headers: { authorization: "Bearer e30.e30.sig" },
+    });
+    expect(authOtel.mockAuthWarn).toHaveBeenCalledWith(
+      "Invalid session token: Error",
+    );
+    expect(authOtel.mockAuthError).not.toHaveBeenCalled();
   });
 
   test("limits registration attempts by IP across usernames", () => {
