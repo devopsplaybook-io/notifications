@@ -295,8 +295,8 @@ onMounted(async () => {
 }
 
 .page-actions {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
   align-items: center;
   gap: var(--space-sm);
   padding: 0 var(--space-sm) var(--space-xs);
@@ -324,13 +324,13 @@ onMounted(async () => {
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .filters {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-column: 1 / -1;
   gap: var(--space-sm);
   min-width: 0;
 }
@@ -339,8 +339,13 @@ onMounted(async () => {
   font-size: var(--font-sm);
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
-  width: auto;
-  min-width: 9rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page-actions button {
+  width: 100%;
 }
 
 #notifications-list {
