@@ -295,9 +295,8 @@ onMounted(async () => {
 }
 
 .page-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
   align-items: center;
   gap: var(--space-sm);
   padding: 0 var(--space-sm) var(--space-xs);
@@ -329,8 +328,9 @@ onMounted(async () => {
 }
 
 .filters {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-column: 1 / -1;
   gap: var(--space-sm);
   min-width: 0;
 }
@@ -339,9 +339,13 @@ onMounted(async () => {
   font-size: var(--font-sm);
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
-  width: auto;
-  min-width: min(9rem, 100%);
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
+}
+
+.page-actions button {
+  width: 100%;
 }
 
 #notifications-list {
