@@ -4,25 +4,13 @@ import { PushService } from "~/services/PushService";
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
 
-function updateAppHeight() {
-  const height = window.visualViewport?.height ?? window.innerHeight;
-  document.documentElement.style.setProperty("--app-height", `${height}px`);
-}
+useAppHeight();
 
 onMounted(async () => {
-  updateAppHeight();
-  window.addEventListener("resize", updateAppHeight);
-  window.visualViewport?.addEventListener("resize", updateAppHeight);
-
   // Subscribe to push notifications after authentication
   if (await authenticationStore.ensureAuthenticated()) {
     await PushService.subscribe();
   }
-});
-
-onUnmounted(() => {
-  window.removeEventListener("resize", updateAppHeight);
-  window.visualViewport?.removeEventListener("resize", updateAppHeight);
 });
 </script>
 
