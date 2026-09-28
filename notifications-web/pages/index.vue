@@ -5,10 +5,10 @@
       <p>Please login to view notifications.</p>
     </div>
 
-    <div
+    <Loading
       v-else-if="notificationsStore.loading && !notificationsStore.loaded"
-      class="loading-indicator"
-    ></div>
+      class="notifications-loading"
+    />
 
     <div v-else>
       <div class="page-actions">

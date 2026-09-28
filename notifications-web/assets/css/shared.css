@@ -10,27 +10,11 @@
   100% { opacity: 1; }
 }
 
-.loading-indicator {
+.loading-indicator.notifications-loading {
   width: 3rem;
-  margin-left: auto;
-  margin-right: auto;
-  margin-top: 3rem;
-  margin-bottom: 3rem;
-  aspect-ratio: 1;
-  --c: no-repeat linear-gradient(var(--color-text) 0 0);
-  background:
-    var(--c) 0% 50%,
-    var(--c) 50% 50%,
-    var(--c) 100% 50%;
-  background-size: 20% 100%;
-  animation: l1 2s infinite linear;
-}
-@keyframes l1 {
-  0% { background-size: 20% 100%, 20% 100%, 20% 100%; }
-  33% { background-size: 20% 10%, 20% 100%, 20% 100%; }
-  50% { background-size: 20% 100%, 20% 10%, 20% 100%; }
-  66% { background-size: 20% 100%, 20% 100%, 20% 10%; }
-  100% { background-size: 20% 100%, 20% 100%, 20% 100%; }
+  min-width: 0;
+  margin: 3rem auto;
+  color: var(--color-text);
 }
 
 .actions i {
