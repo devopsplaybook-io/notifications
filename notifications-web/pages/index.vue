@@ -296,7 +296,8 @@ onMounted(async () => {
 
 .page-actions {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--space-sm);
   padding: 0 var(--space-sm) var(--space-xs);
@@ -324,13 +325,12 @@ onMounted(async () => {
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .filters {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   min-width: 0;
 }
@@ -340,7 +340,8 @@ onMounted(async () => {
   padding: var(--space-xs) var(--space-sm);
   margin: 0;
   width: auto;
-  min-width: 9rem;
+  min-width: min(9rem, 100%);
+  max-width: 100%;
 }
 
 #notifications-list {
