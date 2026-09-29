@@ -99,7 +99,11 @@ export const NotificationsStore = defineStore("NotificationsStore", {
           { read },
           headers,
         );
-        await this.loadNotifications();
+        const notification = this.notifications.find((item) => item.id === id);
+        if (notification && notification.read !== read) {
+          this.unreadCount += read ? -1 : 1;
+          notification.read = read;
+        }
       } catch (err) {
         console.error("Failed to update notification read state", err);
       }
@@ -112,8 +116,15 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         if (this.sourceFilter) {
           url += `&source=${encodeURIComponent(this.sourceFilter)}`;
         }
-        await axios.put(url, {}, headers);
-        await this.loadNotifications();
+        const res = await axios.put(url, {}, headers);
+        this.notifications.forEach((notification) => {
+          notification.read = true;
+        });
+        if (this.readFilter === "unread") {
+          this.unreadCount = Math.max(0, this.unreadCount - res.data.updated);
+        } else {
+          await this.loadUnreadCount();
+        }
       } catch (err) {
         console.error("Failed to mark notifications as read", err);
       }
