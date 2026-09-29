@@ -107,6 +107,69 @@ describe("notification store", () => {
     expect(store.readFilter).toBe("all");
   });
 
+  it("updates an item's read state without reloading the filtered list", async () => {
+    mockedAxios.put.mockResolvedValueOnce({} as any);
+    const store = NotificationsStore();
+    store.notifications = [{ id: "1", read: false }];
+    store.unreadCount = 2;
+
+    await store.markRead("1", true);
+
+    expect(store.notifications).toEqual([{ id: "1", read: true }]);
+    expect(store.unreadCount).toBe(1);
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      "/api/notifications/1/read",
+      { read: true },
+      expect.anything(),
+    );
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
+
+  it("keeps visible items after marking all read and refreshes only the unread count", async () => {
+    mockedAxios.put.mockResolvedValueOnce({ data: { updated: 2 } } as any);
+    mockedAxios.get.mockResolvedValueOnce({ data: { total: 0 } } as any);
+    const store = NotificationsStore();
+    store.notifications = [
+      { id: "1", read: false },
+      { id: "2", read: false },
+    ];
+    store.unreadCount = 2;
+    store.readFilter = "all";
+
+    await store.markAllRead();
+
+    expect(store.notifications).toEqual([
+      { id: "1", read: true },
+      { id: "2", read: true },
+    ]);
+    expect(store.unreadCount).toBe(0);
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      "/api/notifications/read-all?read=all",
+      {},
+      expect.anything(),
+    );
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+    expect(mockedAxios.get.mock.calls[0]![0]).toBe(
+      "/api/notifications?limit=1&read=unread",
+    );
+  });
+
+  it("uses the bulk update count for the unread badge without fetching the list", async () => {
+    mockedAxios.put.mockResolvedValueOnce({ data: { updated: 2 } } as any);
+    const store = NotificationsStore();
+    store.notifications = [
+      { id: "1", read: false },
+      { id: "2", read: false },
+    ];
+    store.unreadCount = 3;
+
+    await store.markAllRead();
+
+    expect(store.notifications.every((item) => item.read)).toBe(true);
+    expect(store.unreadCount).toBe(1);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
+
   it("deletes all notifications and clears the unread badge", async () => {
     mockedAxios.delete.mockResolvedValueOnce({} as any);
     const store = NotificationsStore();

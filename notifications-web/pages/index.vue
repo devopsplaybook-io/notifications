@@ -356,20 +356,11 @@ onMounted(async () => {
 
 .notification-card {
   margin: 0;
+  border-left: 3px solid transparent;
 }
 
 .notification-card.unread {
-  border-left: 3px solid var(--color-primary);
-}
-
-.notification-card.unread h3 {
-  font-weight: 600;
-}
-
-.notification-card.read h3,
-.notification-card.read .notification-meta,
-.notification-card.read .notification-body {
-  opacity: 0.6;
+  border-left-color: var(--color-primary);
 }
 
 .notification-header {
