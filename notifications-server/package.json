@@ -12,7 +12,7 @@
     "dev": "tsx watch ./src/App.ts"
   },
   "dependencies": {
-    "@devopsplaybook.io/common-utils": "^1.2.2",
+    "@devopsplaybook.io/common-utils": "^1.12.0",
     "@devopsplaybook.io/otel-utils-fastify": "^1.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/static": "^10.1.3",
