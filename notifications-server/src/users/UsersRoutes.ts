@@ -10,6 +10,7 @@ import {
 import { AuthRateLimit } from "./AuthRateLimit";
 import {
   UsersDataAdd,
+  UsersDataBumpTokenVersion,
   UsersDataGet,
   UsersDataGetByName,
   UsersDataList,
@@ -21,11 +22,8 @@ let creatingInitialUser = false;
 export class UsersRoutes {
   public async getRoutes(fastify: FastifyInstance): Promise<void> {
     fastify.get("/status/initialization", async (req, res) => {
-      if ((await UsersDataList(OTelRequestSpan(req))).length === 0) {
-        res.status(201).send({ initialized: false });
-      } else {
-        res.status(201).send({ initialized: true });
-      }
+      const initialized = (await UsersDataList(OTelRequestSpan(req))).length > 0;
+      return res.status(200).send({ initialized });
     });
 
     interface PostSession extends RequestGenericInterface {
@@ -35,16 +33,11 @@ export class UsersRoutes {
       };
     }
     fastify.post<PostSession>("/session", async (req, res) => {
-      if (!AuthRateLimit(req, req.body?.name, "login")) {
-        return res
-          .header("Retry-After", "60")
-          .status(429)
-          .send({ error: "Too many authentication attempts" });
-      }
-      let user: User;
+      // A request carrying a valid session is a token refresh, not a login
+      // attempt: it is re-issued without consuming the login rate-limit bucket.
       const userSession = await AuthGetUserSession(req);
       if (userSession.isAuthenticated) {
-        user = await UsersDataGet(OTelRequestSpan(req), userSession.userId);
+        const user = await UsersDataGet(OTelRequestSpan(req), userSession.userId);
         if (!user) {
           return res.status(401).send({ error: "Authentication Failed" });
         }
@@ -53,19 +46,29 @@ export class UsersRoutes {
           .send({ success: true, token: await AuthGenerateJWT(user) });
       }
 
-      if (!req.body.name) {
+      if (!AuthRateLimit(req, req.body?.name, "login")) {
+        return res
+          .header("Retry-After", "60")
+          .status(429)
+          .send({ error: "Too many authentication attempts" });
+      }
+
+      if (!req.body?.name) {
         return res.status(400).send({ error: "Missing: Name" });
       }
-      if (!req.body.password) {
+      if (!req.body?.password) {
         return res.status(400).send({ error: "Missing: Password" });
       }
-      user = await UsersDataGetByName(OTelRequestSpan(req), req.body.name);
+      const user = await UsersDataGetByName(
+        OTelRequestSpan(req),
+        req.body.name,
+      );
       if (!user) {
         await UserPasswordCheckUnknownUser(
           OTelRequestSpan(req),
           req.body.password,
         );
-        return res.status(403).send({ error: "Authentication Failed" });
+        return res.status(401).send({ error: "Authentication Failed" });
       } else if (
         await UserPasswordCheckPassword(
           OTelRequestSpan(req),
@@ -77,7 +80,7 @@ export class UsersRoutes {
           .status(201)
           .send({ success: true, token: await AuthGenerateJWT(user) });
       } else {
-        return res.status(403).send({ error: "Authentication Failed" });
+        return res.status(401).send({ error: "Authentication Failed" });
       }
     });
 
@@ -103,10 +106,10 @@ export class UsersRoutes {
           return res.status(403).send({ error: "Account creation is closed" });
         }
         const newUser = new User();
-        if (!req.body.name) {
+        if (!req.body?.name) {
           return res.status(400).send({ error: "Missing: Name" });
         }
-        if (!req.body.password) {
+        if (!req.body?.password) {
           return res.status(400).send({ error: "Missing: Password" });
         }
         if (await UsersDataGetByName(OTelRequestSpan(req), req.body.name)) {
@@ -134,10 +137,10 @@ export class UsersRoutes {
     fastify.put<PutNewPassword>("/password", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const user = await UsersDataGet(OTelRequestSpan(req), userSession.userId);
-      if (!req.body.password || !req.body.passwordOld) {
+      if (!req.body?.password || !req.body?.passwordOld) {
         return res.status(400).send({ error: "Missing: Password" });
       }
       if (
@@ -155,7 +158,28 @@ export class UsersRoutes {
         req.body.password,
       );
       await UsersDataUpdate(OTelRequestSpan(req), user);
-      res.status(201).send({});
+      // Changing the password revokes every other session; the caller gets a
+      // freshly issued token bound to the new token version.
+      await UsersDataBumpTokenVersion(OTelRequestSpan(req), user.id);
+      const updated = await UsersDataGet(OTelRequestSpan(req), user.id);
+      if (!updated) {
+        return res.status(401).send({ error: "Authentication Failed" });
+      }
+      return res.status(201).send({
+        success: true,
+        token: await AuthGenerateJWT(updated),
+      });
+    });
+
+    // Logout revokes every session/token of the user (revoke-all devices):
+    // sessions bound to the previous token version stop authenticating.
+    fastify.post("/logout", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated) {
+        return res.status(401).send({ error: "Access Denied" });
+      }
+      await UsersDataBumpTokenVersion(OTelRequestSpan(req), userSession.userId);
+      return res.status(200).send({ success: true });
     });
   }
 }

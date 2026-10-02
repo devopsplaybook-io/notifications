@@ -80,3 +80,24 @@ export async function UsersDataUpdate(
     span.end();
   }
 }
+
+/**
+ * Revoke every existing session/token for the user by incrementing its
+ * tokenVersion. The next authentication with an older token fails.
+ */
+export async function UsersDataBumpTokenVersion(
+  context: Span,
+  userId: string,
+): Promise<void> {
+  const span = OTelTracer().startSpan("UsersDataBumpTokenVersion", context);
+  try {
+    await DbUtilsExecSQL(
+      span,
+      'UPDATE users SET "tokenVersion" = COALESCE("tokenVersion", 0) + 1 WHERE id = ?',
+      [userId],
+    );
+    logger.info(`Sessions revoked for user: ${userId}`, span);
+  } finally {
+    span.end();
+  }
+}

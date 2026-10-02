@@ -75,7 +75,7 @@ export class NotificationsRoutes {
     fastify.get<GetNotifications>("/", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const limit = Math.min(
         200,
@@ -106,7 +106,7 @@ export class NotificationsRoutes {
     fastify.get("/sources", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const sources = await NotificationsDataSources(OTelRequestSpan(req));
       return res.status(200).send({ sources });
@@ -130,7 +130,7 @@ export class NotificationsRoutes {
       }
       const isValid = await ApiTokensValidate(OTelRequestSpan(req), token);
       if (!isValid) {
-        return res.status(403).send({ error: "Invalid API token" });
+        return res.status(401).send({ error: "Invalid API token" });
       }
 
       const body = req.body;
@@ -145,6 +145,9 @@ export class NotificationsRoutes {
       const textBody = body.body === undefined ? "" : body.body;
       if (typeof textBody !== "string") {
         return res.status(400).send({ error: "Invalid: body" });
+      }
+      if (Buffer.byteLength(textBody, "utf8") > 10 * 1024) {
+        return res.status(400).send({ error: "Invalid: body exceeds 10 KB" });
       }
       const source = body.source === undefined ? "api" : body.source;
       if (
@@ -165,6 +168,9 @@ export class NotificationsRoutes {
       const data = NormalizeNotificationData(body.data);
       if (data === undefined) {
         return res.status(400).send({ error: "Invalid: data must be a JSON object" });
+      }
+      if (Buffer.byteLength(data, "utf8") > 4 * 1024) {
+        return res.status(400).send({ error: "Invalid: data exceeds 4 KB" });
       }
 
       const notification = new Notification();
@@ -203,7 +209,7 @@ export class NotificationsRoutes {
     fastify.delete<DeleteNotification>("/:id", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const deleted = await NotificationsDataDelete(
         OTelRequestSpan(req),
@@ -227,15 +233,16 @@ export class NotificationsRoutes {
     fastify.put<PutNotificationRead>("/:id/read", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
-      if (typeof req.body.read !== "boolean") {
+      const read = req.body?.read;
+      if (typeof read !== "boolean") {
         return res.status(400).send({ error: "Missing: read" });
       }
       const updated = await NotificationsDataUpdateRead(
         OTelRequestSpan(req),
         req.params.id,
-        req.body.read,
+        read,
       );
       if (!updated) {
         return res.status(404).send({ error: "Notification not found" });
@@ -253,7 +260,7 @@ export class NotificationsRoutes {
     fastify.put<PutNotificationsReadAll>("/read-all", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const source = req.query.source || "";
       const read: NotificationReadFilter =
@@ -272,7 +279,7 @@ export class NotificationsRoutes {
     fastify.delete("/", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const count = await NotificationsDataDeleteAll(OTelRequestSpan(req));
       return res.status(200).send({ success: true, deleted: count });

@@ -90,6 +90,17 @@ async function createUser() {
 }
 
 async function logout() {
+  // Revoke all sessions server-side (best effort; local cleanup regardless)
+  try {
+    const headers = await AuthService.getAuthHeader();
+    await axios.post(
+      `${(await Config.get()).SERVER_URL}/users/logout`,
+      {},
+      headers,
+    );
+  } catch (err) {
+    console.error("Failed to revoke sessions", err);
+  }
   await AuthService.removeToken();
   authenticationStore.isAuthenticated = false;
   name.value = "";

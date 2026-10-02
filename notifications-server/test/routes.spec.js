@@ -68,6 +68,10 @@ describe("notification routes", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    AuthGetUserSession.mockResolvedValue({
+      isAuthenticated: false,
+      userId: null,
+    });
     ApiTokensValidate.mockResolvedValue(true);
     app = Fastify();
     await app.register(new NotificationsRoutes().getRoutes, {
@@ -147,6 +151,102 @@ describe("notification routes", () => {
       headers: { authorization: "Bearer session" },
     });
     expect(missingDelete.statusCode).toBe(404);
+  });
+
+  test("returns 400 (not 500) for body-less requests on protected routes", async () => {
+    AuthGetUserSession.mockResolvedValue({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const readUpdate = await app.inject({
+      method: "PUT",
+      url: "/notifications/notification-id/read",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(readUpdate.statusCode).toBe(400);
+    const pushSubscribe = await app.inject({
+      method: "POST",
+      url: "/push/subscribe",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(pushSubscribe.statusCode).toBe(400);
+    const pushUnsubscribe = await app.inject({
+      method: "DELETE",
+      url: "/push/subscribe",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(pushUnsubscribe.statusCode).toBe(400);
+  });
+
+  test("caps the notification body at 10 KB and serialized data at 4 KB", async () => {
+    const apiHeaders = { authorization: "Bearer api-token" };
+    const oversizedBody = await app.inject({
+      method: "POST",
+      url: "/notifications",
+      headers: apiHeaders,
+      payload: { title: "Test", body: "a".repeat(10 * 1024 + 1) },
+    });
+    expect(oversizedBody.statusCode).toBe(400);
+    expect(JSON.parse(oversizedBody.body).error).toContain("10 KB");
+
+    const dataAtLimit = {
+      d: "x".repeat(4 * 1024 - JSON.stringify({ d: "" }).length),
+    };
+    expect(Buffer.byteLength(JSON.stringify(dataAtLimit))).toBe(4 * 1024);
+    const atLimit = await app.inject({
+      method: "POST",
+      url: "/notifications",
+      headers: apiHeaders,
+      payload: { title: "Test", body: "a".repeat(10 * 1024), data: dataAtLimit },
+    });
+    expect(atLimit.statusCode).toBe(201);
+
+    const oversizedData = await app.inject({
+      method: "POST",
+      url: "/notifications",
+      headers: apiHeaders,
+      payload: { title: "Test", data: { d: "x".repeat(4 * 1024) } },
+    });
+    expect(oversizedData.statusCode).toBe(400);
+    expect(JSON.parse(oversizedData.body).error).toContain("4 KB");
+  });
+
+  test("returns 401 for missing or invalid credentials", async () => {
+    const unauthorizedRequests = [
+      ["GET", "/notifications"],
+      ["GET", "/notifications/sources"],
+      ["DELETE", "/notifications/notification-id"],
+      ["DELETE", "/notifications"],
+      ["PUT", "/notifications/read-all"],
+      ["PUT", "/notifications/notification-id/read"],
+      ["POST", "/push/subscribe"],
+      ["DELETE", "/push/subscribe"],
+    ];
+    for (const [method, url] of unauthorizedRequests) {
+      const response = await app.inject({ method, url });
+      expect({ method, url, status: response.statusCode }).toEqual({
+        method,
+        url,
+        status: 401,
+      });
+    }
+
+    ApiTokensValidate.mockResolvedValueOnce(false);
+    const invalidToken = await app.inject({
+      method: "GET",
+      url: "/notifications",
+      headers: { authorization: "Bearer invalid-token" },
+    });
+    expect(invalidToken.statusCode).toBe(401);
+
+    ApiTokensValidate.mockResolvedValueOnce(false);
+    const invalidProducer = await app.inject({
+      method: "POST",
+      url: "/notifications",
+      headers: { authorization: "Bearer invalid-token" },
+      payload: { title: "Test" },
+    });
+    expect(invalidProducer.statusCode).toBe(401);
   });
 
   test("rejects malformed push subscriptions with a client error", async () => {

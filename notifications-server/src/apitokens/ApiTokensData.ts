@@ -98,11 +98,16 @@ export async function ApiTokensMigrateToHashed(context: Span): Promise<void> {
 export async function ApiTokensDelete(
   context: Span,
   id: string,
-): Promise<void> {
+): Promise<number> {
   const span = OTelTracer().startSpan("ApiTokensDelete", context);
   try {
-    await DbUtilsExecSQL(span, "DELETE FROM api_tokens WHERE id = ?", [id]);
-    logger.info(`API token deleted: ${id}`, span);
+    const deleted = await DbUtilsExecSQL(
+      span,
+      "DELETE FROM api_tokens WHERE id = ?",
+      [id],
+    );
+    logger.info(`API token deleted: ${id} (${deleted} rows)`, span);
+    return deleted;
   } finally {
     span.end();
   }

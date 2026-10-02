@@ -1,19 +1,12 @@
 import * as webpush from "web-push";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { DbUtilsExecSQL, DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
-import * as path from "path";
-import { OTelLogger, OTelMeter, OTelTracer } from "../OTelContext";
+import { DbUtilsExecSQL } from "@devopsplaybook.io/common-utils";
+import { OTelTracer } from "../OTelContext";
 import { Config } from "../Config";
 import { Notification } from "../model/Notification";
+import { PushQueueEnqueue } from "../push/PushQueue";
 
 let config: Config;
-const logger = OTelLogger().createModuleLogger(path.basename(__filename));
-const toError = (error: unknown): Error =>
-  error instanceof Error ? error : new Error(String(error));
-const PUSH_TIMEOUT_MS = 5_000;
-const PUSH_FANOUT_TIMEOUT_MS = 10_000;
-const PUSH_CONCURRENCY = 10;
-let pushFailuresCounter: { add: (value: number) => void };
 
 export function PushIsValidSubscription(
   subscription: unknown,
@@ -81,26 +74,14 @@ export async function PushSubscribe(
 ): Promise<void> {
   const span = OTelTracer().startSpan("PushSubscribe", context);
   try {
-    const endpoint = subscription.endpoint;
-    // Check if already subscribed
-    const existing = await DbUtilsQuerySQL(
+    // Atomic upsert: the UNIQUE constraint on endpoint (migration 0005) keeps a
+    // single row per endpoint under concurrent subscribes.
+    await DbUtilsExecSQL(
       span,
-      "SELECT * FROM push_subscriptions WHERE endpoint = ?",
-      [endpoint],
+      'INSERT INTO push_subscriptions ("userId", endpoint, subscription) VALUES (?, ?, ?) ' +
+        'ON CONFLICT(endpoint) DO UPDATE SET subscription = excluded.subscription, "userId" = excluded."userId"',
+      [userId, subscription.endpoint, JSON.stringify(subscription)],
     );
-    if (existing.length > 0) {
-      await DbUtilsExecSQL(
-        span,
-        "UPDATE push_subscriptions SET subscription = ? WHERE endpoint = ?",
-        [JSON.stringify(subscription), endpoint],
-      );
-    } else {
-      await DbUtilsExecSQL(
-        span,
-        'INSERT INTO push_subscriptions ("userId", endpoint, subscription) VALUES (?, ?, ?)',
-        [userId, endpoint, JSON.stringify(subscription)],
-      );
-    }
   } finally {
     span.end();
   }
@@ -122,95 +103,14 @@ export async function PushUnsubscribe(
   }
 }
 
+/**
+ * Enqueue a push fan-out for background delivery. The notification is queued
+ * immediately (sub-millisecond) and delivered by the PushQueue worker with
+ * retries; the API request does not wait for push services.
+ */
 export async function PushSendToAll(notification: Notification): Promise<void> {
   if (!config?.VAPID_PUBLIC_KEY || !config?.VAPID_PRIVATE_KEY) {
     return;
   }
-  const span = OTelTracer().startSpan("PushSendToAll");
-  try {
-    const subscriptions = await DbUtilsQuerySQL(
-      span,
-      "SELECT * FROM push_subscriptions",
-    );
-    const payload = JSON.stringify({
-      id: notification.id,
-      title: notification.title,
-      body: notification.body,
-      severity: notification.severity,
-      source: notification.source,
-      data: notification.data,
-      url: "/",
-    });
-
-    let nextIndex = 0;
-    let skippedSubscriptions = 0;
-    const deadline = Date.now() + PUSH_FANOUT_TIMEOUT_MS;
-    const sendNext = async (): Promise<void> => {
-      while (nextIndex < subscriptions.length) {
-        if (Date.now() + PUSH_TIMEOUT_MS > deadline) {
-          skippedSubscriptions += subscriptions.length - nextIndex;
-          nextIndex = subscriptions.length;
-          return;
-        }
-        const sub = subscriptions[nextIndex++];
-        try {
-          const subscription = JSON.parse(sub.subscription);
-          await webpush.sendNotification(subscription, payload, {
-            timeout: PUSH_TIMEOUT_MS,
-          });
-        } catch (error) {
-          const statusCode =
-            typeof error === "object" && error !== null && "statusCode" in error
-              ? Number(error.statusCode)
-              : undefined;
-          if (statusCode === 404 || statusCode === 410) {
-            try {
-              await DbUtilsExecSQL(
-                span,
-                "DELETE FROM push_subscriptions WHERE endpoint = ?",
-                [sub.endpoint],
-              );
-            } catch (pruneError) {
-              logger.error(
-                "Failed to prune expired push subscription",
-                toError(pruneError),
-                span,
-              );
-            }
-            continue;
-          }
-          pushFailuresCounter ??= OTelMeter().createCounter("push.failures");
-          pushFailuresCounter.add(1);
-          let endpointOrigin = "invalid subscription";
-          try {
-            endpointOrigin = new URL(sub.endpoint).origin;
-          } catch {
-            // Invalid stored endpoints are reported without exposing their full value.
-          }
-          logger.warn(
-            `Push delivery failed for ${endpointOrigin} (status ${
-              statusCode ?? "unknown"
-            }): ${error}`,
-            span,
-          );
-        }
-      }
-    };
-    await Promise.all(
-      Array.from(
-        { length: Math.min(PUSH_CONCURRENCY, subscriptions.length) },
-        () => sendNext(),
-      ),
-    );
-    if (skippedSubscriptions > 0) {
-      pushFailuresCounter ??= OTelMeter().createCounter("push.failures");
-      pushFailuresCounter.add(skippedSubscriptions);
-      logger.warn(
-        `Push fan-out deadline reached; skipped ${skippedSubscriptions} subscription(s)`,
-        span,
-      );
-    }
-  } finally {
-    span.end();
-  }
+  PushQueueEnqueue(notification);
 }

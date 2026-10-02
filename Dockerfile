@@ -9,7 +9,8 @@ COPY notifications-server notifications-server
 
 RUN cd notifications-server && \
     npm ci && \
-    npm run build
+    npm run build && \
+    npm prune --omit=dev
 
 COPY notifications-web notifications-web
 
@@ -30,5 +31,11 @@ COPY notifications-server/sql /opt/app/notifications/sql
 COPY package.json /opt/app/notifications/package.json
 
 WORKDIR /opt/app/notifications
+
+# The entrypoint rewrites web/manifest.json; the app must also be able to
+# write its SQLite database/backups under DATA_DIR (mounted volume).
+RUN chown -R node:node /opt/app/notifications/web
+
+USER node
 
 ENTRYPOINT [ "/entrypoint.sh" ]

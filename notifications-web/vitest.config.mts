@@ -5,7 +5,7 @@ export default defineConfig({
     environment: "node",
     coverage: {
       reporter: ["text", "json", "lcov"],
-      include: ["stores/**/*.ts"],
+      include: ["stores/**/*.ts", "services/**/*.ts"],
       exclude: ["tests/**"],
     },
   },

@@ -16,6 +16,7 @@ const {
 const {
   ApiTokensList,
   ApiTokensCreate,
+  ApiTokensDelete,
   ApiTokensMigrateToHashed,
   ApiTokensValidate,
 } = require("../dist/apitokens/ApiTokensData");
@@ -71,5 +72,12 @@ describe("API token storage", () => {
       expect.stringContaining("INSERT INTO api_tokens"),
       [result.id, "Build integration", storedHash, expect.any(String)],
     );
+  });
+
+  test("returns the number of rows removed by a token delete", async () => {
+    DbUtilsExecSQL.mockResolvedValueOnce(0);
+    expect(await ApiTokensDelete(undefined, "missing-token")).toBe(0);
+    DbUtilsExecSQL.mockResolvedValueOnce(1);
+    expect(await ApiTokensDelete(undefined, "token-id")).toBe(1);
   });
 });

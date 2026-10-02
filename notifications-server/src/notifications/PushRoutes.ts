@@ -23,7 +23,7 @@ export class PushRoutes {
     fastify.post<PostPushSubscribe>("/subscribe", async (request, reply) => {
       const userSession = await AuthGetUserSession(request);
       if (!userSession.isAuthenticated) {
-        return reply.status(403).send({ error: "Access Denied" });
+        return reply.status(401).send({ error: "Access Denied" });
       }
       if (!PushIsValidSubscription(request.body?.subscription)) {
         return reply.status(400).send({ error: "Invalid: subscription" });
@@ -44,7 +44,7 @@ export class PushRoutes {
     fastify.delete<DeletePushSubscribe>("/subscribe", async (request, reply) => {
       const userSession = await AuthGetUserSession(request);
       if (!userSession.isAuthenticated) {
-        return reply.status(403).send({ error: "Access Denied" });
+        return reply.status(401).send({ error: "Access Denied" });
       }
       if (!PushIsValidEndpoint(request.body?.endpoint)) {
         return reply.status(400).send({ error: "Invalid: endpoint" });

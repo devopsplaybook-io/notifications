@@ -66,6 +66,7 @@
           <i class="bi bi-trash"></i> Delete all
         </button>
       </div>
+      <p v-if="pushHint" class="push-hint">{{ pushHint }}</p>
       <p v-if="notificationsStore.loaded" class="result-count">
         Showing {{ notificationsStore.notifications.length }} of
         {{ notificationsStore.total }} notifications
@@ -128,7 +129,7 @@
                 'notification-content',
                 { expanded: n._expanded, truncatable: isLongContent(n.body) },
               ]"
-              v-html="renderMarkdown(n.body)"
+              v-html="renderMarkdown(n)"
             ></div>
             <button
               v-if="isLongContent(n.body)"
@@ -161,16 +162,29 @@
 </template>
 
 <script setup>
-import { marked } from "marked";
-import DOMPurify from "dompurify";
 import { PushService } from "~/services/PushService";
+import { RenderCache } from "~/services/RenderCache";
 
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
 const pushSupported = ref(false);
 const pushSubscribed = ref(false);
+const pushPermission = ref("denied");
 const pushBusy = ref(false);
 const pushError = ref("");
+
+const pushHint = computed(() => {
+  if (!pushSupported.value || pushSubscribed.value) {
+    return "";
+  }
+  if (pushPermission.value === "default") {
+    return 'Click "Enable push" and allow browser notifications to receive alerts.';
+  }
+  if (pushPermission.value === "denied") {
+    return "Browser notifications are blocked for this site.";
+  }
+  return "";
+});
 
 const emptyMessage = computed(() => {
   if (notificationsStore.readFilter === "unread") {
@@ -182,12 +196,6 @@ const emptyMessage = computed(() => {
   return notificationsStore.sourceFilter
     ? "No notifications for this source."
     : "No notifications yet.";
-});
-
-// Configure marked for safe rendering
-marked.setOptions({
-  breaks: true,
-  gfm: true,
 });
 
 function severityIcon(severity) {
@@ -209,10 +217,8 @@ function formatDate(dateStr) {
   return d.toLocaleString();
 }
 
-function renderMarkdown(text) {
-  if (!text) return "";
-  const html = marked.parse(text);
-  return DOMPurify.sanitize(html);
+function renderMarkdown(notification) {
+  return RenderCache.renderMarkdown(notification.id, notification.body);
 }
 
 function isLongContent(text) {
@@ -273,7 +279,8 @@ async function togglePush() {
       pushError.value = "Unable to update push notification settings.";
       return;
     }
-    pushSubscribed.value = !pushSubscribed.value;
+    pushSubscribed.value = await PushService.isSubscribed();
+    pushPermission.value = await PushService.getPermission();
   } finally {
     pushBusy.value = false;
   }
@@ -284,6 +291,7 @@ onMounted(async () => {
     refreshNotifications();
     pushSupported.value = await PushService.isSupported();
     pushSubscribed.value = await PushService.isSubscribed();
+    pushPermission.value = await PushService.getPermission();
   }
 });
 </script>
@@ -317,6 +325,12 @@ onMounted(async () => {
 .push-error {
   color: var(--color-danger);
   padding: 0 var(--space-sm);
+}
+
+.push-hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  padding: 0 var(--space-sm) var(--space-xs);
 }
 
 .page-actions button {

@@ -10,6 +10,9 @@ jest.mock("@devopsplaybook.io/common-utils", () => ({
   DbUtilsExecSQL: jest.fn().mockResolvedValue(1),
   DbUtilsQuerySQL: jest.fn().mockResolvedValue([]),
 }));
+jest.mock("../dist/users/UsersData", () => ({
+  UsersDataGet: jest.fn().mockResolvedValue(null),
+}));
 jest.mock("../dist/OTelContext", () => ({
   OTelTracer: () => ({ startSpan: () => ({ end: jest.fn() }) }),
   mockAuthError,
@@ -23,9 +26,15 @@ jest.mock("../dist/OTelContext", () => ({
   }),
 }));
 
-const { AuthGetUserSession, AuthInit, AuthValidateJWTKey } = require("../dist/users/Auth");
+const {
+  AuthGetUserSession,
+  AuthInit,
+  AuthRenewSession,
+  AuthValidateJWTKey,
+} = require("../dist/users/Auth");
 const { AuthRateLimit } = require("../dist/users/AuthRateLimit");
-const { verify } = require("jsonwebtoken");
+const { sign, verify } = require("jsonwebtoken");
+const { UsersDataGet } = require("../dist/users/UsersData");
 const authOtel = require("../dist/OTelContext");
 
 describe("authentication hardening", () => {
@@ -81,6 +90,119 @@ describe("authentication hardening", () => {
     }
     expect(AuthRateLimit({ ip }, "registration-last", "registration")).toBe(
       false,
+    );
+  });
+
+  test("accepts sessions whose token version matches the stored user", async () => {
+    await AuthInit(undefined, { JWT_KEY: "strong-signing-key-123456789012345" });
+    verify.mockReturnValueOnce({
+      userId: "user-1",
+      userName: "admin",
+      tokenVersion: 2,
+    });
+    UsersDataGet.mockResolvedValueOnce({
+      id: "user-1",
+      name: "admin",
+      tokenVersion: 2,
+    });
+    const session = await AuthGetUserSession({
+      headers: { authorization: "Bearer aaa.bbb.ccc" },
+    });
+    expect(session).toEqual({ isAuthenticated: true, userId: "user-1" });
+  });
+
+  test("rejects sessions revoked by a password change or logout", async () => {
+    await AuthInit(undefined, { JWT_KEY: "strong-signing-key-123456789012345" });
+    authOtel.mockAuthWarn.mockClear();
+    verify.mockReturnValueOnce({
+      userId: "user-1",
+      userName: "admin",
+      tokenVersion: 2,
+    });
+    UsersDataGet.mockResolvedValueOnce({
+      id: "user-1",
+      name: "admin",
+      tokenVersion: 3,
+    });
+    const session = await AuthGetUserSession({
+      headers: { authorization: "Bearer aaa.bbb.ccc" },
+    });
+    expect(session.isAuthenticated).toBe(false);
+    expect(authOtel.mockAuthWarn).toHaveBeenCalledWith(
+      "Revoked or unknown session for user: admin",
+    );
+  });
+
+  test("treats tokens without a version claim as version 0", async () => {
+    await AuthInit(undefined, { JWT_KEY: "strong-signing-key-123456789012345" });
+    verify.mockReturnValueOnce({ userId: "user-1", userName: "admin" });
+    UsersDataGet.mockResolvedValueOnce({
+      id: "user-1",
+      name: "admin",
+      tokenVersion: 0,
+    });
+    const legacySession = await AuthGetUserSession({
+      headers: { authorization: "Bearer aaa.bbb.ccc" },
+    });
+    expect(legacySession).toEqual({ isAuthenticated: true, userId: "user-1" });
+
+    verify.mockReturnValueOnce({ userId: "user-1", userName: "admin" });
+    UsersDataGet.mockResolvedValueOnce({
+      id: "user-1",
+      name: "admin",
+      tokenVersion: 1,
+    });
+    const revokedLegacySession = await AuthGetUserSession({
+      headers: { authorization: "Bearer aaa.bbb.ccc" },
+    });
+    expect(revokedLegacySession.isAuthenticated).toBe(false);
+  });
+
+  test("renews old sessions only while the token version is current", async () => {
+    await AuthInit(undefined, { JWT_KEY: "strong-signing-key-123456789012345" });
+    const oldIssuedAt = Math.floor(Date.now() / 1000) - 48 * 60 * 60;
+    verify.mockReturnValueOnce({
+      iat: oldIssuedAt,
+      userId: "user-1",
+      userName: "admin",
+      tokenVersion: 0,
+    });
+    UsersDataGet.mockResolvedValueOnce({
+      id: "user-1",
+      name: "admin",
+      tokenVersion: 0,
+    });
+    sign.mockReturnValueOnce("renewed-token");
+    const renewedHeader = jest.fn();
+    await AuthRenewSession(
+      { headers: { authorization: "Bearer aaa.bbb.ccc" } },
+      { header: renewedHeader },
+    );
+    expect(renewedHeader).toHaveBeenCalledWith(
+      "X-Renewed-Token",
+      "renewed-token",
+    );
+
+    authOtel.mockAuthWarn.mockClear();
+    verify.mockReturnValueOnce({
+      iat: oldIssuedAt,
+      userId: "user-1",
+      userName: "admin",
+      tokenVersion: 0,
+    });
+    UsersDataGet.mockResolvedValueOnce({
+      id: "user-1",
+      name: "admin",
+      tokenVersion: 1,
+    });
+    const staleHeader = jest.fn();
+    await AuthRenewSession(
+      { headers: { authorization: "Bearer aaa.bbb.ccc" } },
+      { header: staleHeader },
+    );
+    expect(staleHeader).not.toHaveBeenCalled();
+    expect(authOtel.mockAuthWarn).toHaveBeenCalledWith(
+      "Session renewal rejected for user: admin",
     );
   });
 });

@@ -7,9 +7,10 @@ const authenticationStore = AuthenticationStore();
 useAppHeight();
 
 onMounted(async () => {
-  // Subscribe to push notifications after authentication
+  // Re-register push only when the user previously enabled it; never
+  // auto-subscribes and never triggers the browser permission prompt.
   if (await authenticationStore.ensureAuthenticated()) {
-    await PushService.subscribe();
+    await PushService.syncIfEnabled();
   }
 });
 </script>

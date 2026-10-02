@@ -32,15 +32,20 @@ export class AuthService {
 
   public static async getToken() {
     const storedKey = localStorage.getItem(AUTH_TOKEN_KEY);
-    if (storedKey) {
-      const decoded = jwtDecode(storedKey);
-      if ((decoded as any).exp < Date.now() / 1000) {
-        console.log("Auth token expired");
+    if (!storedKey) {
+      return null;
+    }
+    try {
+      const decoded = jwtDecode(storedKey) as { exp?: number };
+      if (typeof decoded.exp !== "number" || decoded.exp < Date.now() / 1000) {
+        console.log("Auth token expired or missing expiry");
         localStorage.removeItem(AUTH_TOKEN_KEY);
         return null;
       }
       return storedKey;
-    } else {
+    } catch {
+      console.error("Auth token is malformed");
+      localStorage.removeItem(AUTH_TOKEN_KEY);
       return null;
     }
   }
