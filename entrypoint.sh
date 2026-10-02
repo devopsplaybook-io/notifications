@@ -1,9 +1,17 @@
 #!/bin/sh
+set -e
 
-if [ "${APPLICATION_TITLE}" == "" ]; then
+if [ "${APPLICATION_TITLE}" = "" ]; then
   APPLICATION_TITLE="Notifications"
 fi
 
-sed -i "s/APPLICATION_TITLE/$APPLICATION_TITLE/g" /opt/app/notifications/web/manifest.webmanifest
+node -e '
+const fs = require("fs");
+const file = "/opt/app/notifications/web/manifest.json";
+const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+manifest.name = process.env.APPLICATION_TITLE;
+manifest.short_name = process.env.APPLICATION_TITLE;
+fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n");
+'
 
-node dist/App.js
+exec node dist/App.js
