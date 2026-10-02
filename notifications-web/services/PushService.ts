@@ -1,4 +1,5 @@
 import Config from "./Config";
+import { PreferencesService } from "./PreferencesService";
 
 export class PushService {
   public static async isSupported(): Promise<boolean> {
@@ -35,6 +36,7 @@ export class PushService {
     return Notification.requestPermission();
   }
 
+  /** Subscribe from an explicit user action; requests the browser permission. */
   public static async subscribe(): Promise<boolean> {
     if (!(await PushService.isSupported())) {
       return false;
@@ -68,28 +70,41 @@ export class PushService {
         });
       }
 
-      const config = await Config.get();
-      const token = localStorage.getItem("auth_token");
-      if (!token) {
-        console.error("No auth token for push subscription");
+      if (!(await PushService.saveSubscription(subscription))) {
         return false;
       }
-      const response = await fetch(`${config.SERVER_URL}/push/subscribe`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: ["Bearer", token].join(" "),
-        },
-        body: JSON.stringify({ subscription: subscription.toJSON() }),
-      });
-      if (!response.ok) {
-        console.error("Failed to save push subscription");
-        return false;
-      }
+      PreferencesService.setPushEnabled(true);
       return true;
     } catch (error) {
       console.error("Push subscription failed:", error);
       return false;
+    }
+  }
+
+  /**
+   * Re-register an existing browser subscription after load when the user has
+   * previously enabled push (e.g. server-side data was lost or the session was
+   * recreated). Never prompts and never creates a browser subscription.
+   */
+  public static async syncIfEnabled(): Promise<void> {
+    if (!PreferencesService.isPushEnabled()) {
+      return;
+    }
+    if (!(await PushService.isSupported())) {
+      return;
+    }
+    if (Notification.permission !== "granted") {
+      return;
+    }
+    try {
+      const registration = await navigator.serviceWorker.getRegistration("/");
+      const subscription = await registration?.pushManager.getSubscription();
+      if (!subscription) {
+        return;
+      }
+      await PushService.saveSubscription(subscription);
+    } catch (error) {
+      console.error("Push subscription sync failed:", error);
     }
   }
 
@@ -100,32 +115,66 @@ export class PushService {
     try {
       const registration = await navigator.serviceWorker.getRegistration("/");
       const subscription = await registration?.pushManager.getSubscription();
-      if (!subscription) {
-        return true;
+      if (subscription) {
+        if (!(await PushService.deleteSubscription(subscription.endpoint))) {
+          return false;
+        }
+        if (!(await subscription.unsubscribe())) {
+          return false;
+        }
       }
-      const config = await Config.get();
-      const token = localStorage.getItem("auth_token");
-      if (!token) {
-        console.error("No auth token for push unsubscription");
-        return false;
-      }
-      const response = await fetch(`${config.SERVER_URL}/push/subscribe`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: ["Bearer", token].join(" "),
-        },
-        body: JSON.stringify({ endpoint: subscription.endpoint }),
-      });
-      if (!response.ok) {
-        console.error("Failed to remove push subscription");
-        return false;
-      }
-      return await subscription.unsubscribe();
+      PreferencesService.setPushEnabled(false);
+      return true;
     } catch (error) {
       console.error("Push unsubscription failed:", error);
       return false;
     }
+  }
+
+  private static async saveSubscription(
+    subscription: PushSubscription,
+  ): Promise<boolean> {
+    const config = await Config.get();
+    const token = localStorage.getItem("auth_token");
+    if (!token) {
+      console.error("No auth token for push subscription");
+      return false;
+    }
+    const response = await fetch(`${config.SERVER_URL}/push/subscribe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: ["Bearer", token].join(" "),
+      },
+      body: JSON.stringify({ subscription: subscription.toJSON() }),
+    });
+    if (!response.ok) {
+      console.error("Failed to save push subscription");
+      return false;
+    }
+    return true;
+  }
+
+  private static async deleteSubscription(endpoint: string): Promise<boolean> {
+    const config = await Config.get();
+    const token = localStorage.getItem("auth_token");
+    if (!token) {
+      console.error("No auth token for push unsubscription");
+      return false;
+    }
+    const response = await fetch(`${config.SERVER_URL}/push/subscribe`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: ["Bearer", token].join(" "),
+      },
+      body: JSON.stringify({ endpoint }),
+    });
+    if (!response.ok) {
+      console.error("Failed to remove push subscription");
+      return false;
+    }
+    return true;
   }
 
   private static urlBase64ToUint8Array(base64String: string): Uint8Array {

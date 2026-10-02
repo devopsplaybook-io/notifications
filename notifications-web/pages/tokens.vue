@@ -107,6 +107,13 @@ async function createToken() {
 }
 
 async function deleteToken(id) {
+  if (
+    !window.confirm(
+      "Delete this API token? Integrations using it will stop working.",
+    )
+  ) {
+    return;
+  }
   try {
     const headers = await AuthService.getAuthHeader();
     await axios.delete(
