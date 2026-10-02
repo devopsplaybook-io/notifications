@@ -4,11 +4,8 @@ import { User } from "../model/User";
 import { UserSession } from "../model/UserSession";
 import { Config } from "../Config";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import {
-  DbUtilsExecSQL,
-  DbUtilsQuerySQL,
-} from "@devopsplaybook.io/common-utils";
 import { OTelLogger, OTelTracer } from "../OTelContext";
+import { UsersDataGet } from "./UsersData";
 
 const logger = OTelLogger().createModuleLogger(path.basename(__filename));
 let config: Config;
@@ -26,29 +23,15 @@ export function AuthValidateJWTKey(key: string): void {
   }
 }
 
-export async function AuthInit(context: Span, configIn: Config) {
+/**
+ * The JWT signing key is environment/secret-only: it is never read from or
+ * written to the database (migration init-0005 purges the legacy metadata
+ * row). Rotating JWT_KEY and restarting the service invalidates all existing
+ * sessions; clients simply log in again.
+ */
+export async function AuthInit(_context: Span, configIn: Config) {
   AuthValidateJWTKey(configIn.JWT_KEY);
   config = configIn;
-  const span = OTelTracer().startSpan("AuthInit", context);
-  const authKeyRaw = await DbUtilsQuerySQL(
-    span,
-    "SELECT * FROM metadata WHERE type='auth_token'",
-  );
-
-  if (authKeyRaw.length === 0) {
-    await DbUtilsExecSQL(
-      span,
-      "INSERT INTO metadata (type, value, dateCreated) VALUES ('auth_token', ?, ?)",
-      [configIn.JWT_KEY, new Date().toISOString()],
-    );
-  } else if (authKeyRaw[0].value !== configIn.JWT_KEY) {
-    await DbUtilsExecSQL(
-      span,
-      "UPDATE metadata SET value = ? WHERE type = 'auth_token'",
-      [configIn.JWT_KEY],
-    );
-  }
-  span.end();
 }
 
 export async function AuthGenerateJWT(user: User): Promise<string> {
@@ -57,6 +40,7 @@ export async function AuthGenerateJWT(user: User): Promise<string> {
       exp: Math.floor(Date.now() / 1000) + config.JWT_VALIDITY_DURATION,
       userId: user.id,
       userName: user.name,
+      tokenVersion: user.tokenVersion ?? 0,
     },
     config.JWT_KEY,
   );
@@ -66,10 +50,32 @@ export async function AuthGenerateJWT(user: User): Promise<string> {
 const AUTH_RENEWAL_THRESHOLD_SECONDS = 24 * 60 * 60;
 
 /**
+ * Sessions are bound to the per-user tokenVersion stored in the users table
+ * (bumped on password change and logout). Tokens issued before the
+ * tokenVersion migration carry no claim and count as version 0, so existing
+ * sessions stay valid until the user revokes them.
+ * Returns null when the user is gone or the token has been revoked.
+ */
+async function AuthGetSessionUser(info: jwt.JwtPayload): Promise<User | null> {
+  const span = OTelTracer().startSpan("AuthCheckTokenVersion");
+  try {
+    const user = await UsersDataGet(span, info.userId);
+    if (!user) {
+      return null;
+    }
+    return Number(user.tokenVersion ?? 0) === Number(info.tokenVersion ?? 0)
+      ? user
+      : null;
+  } finally {
+    span.end();
+  }
+}
+
+/**
  * Re-issue a fresh session token for an authenticated request whose token is
  * older than the renewal threshold.  The renewed token is sent via the
  * "X-Renewed-Token" response header and picked up by the web client, keeping
- * active sessions alive (sliding session).
+ * active sessions alive (sliding session).  Revoked tokens are never renewed.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function AuthRenewSession(req: any, res: any): Promise<void> {
@@ -89,9 +95,11 @@ export async function AuthRenewSession(req: any, res: any): Promise<void> {
     ) {
       return;
     }
-    const user = new User();
-    user.id = info.userId;
-    user.name = info.userName;
+    const user = await AuthGetSessionUser(info);
+    if (!user) {
+      logger.warn(`Session renewal rejected for user: ${info.userName}`);
+      return;
+    }
     res.header("X-Renewed-Token", await AuthGenerateJWT(user));
     logger.info(`Session renewed for user: ${user.name}`);
   } catch {
@@ -119,7 +127,11 @@ export async function AuthGetUserSession(req: any): Promise<UserSession> {
         );
         return userSession;
       }
-      const info = jwt.verify(parts[1], config.JWT_KEY);
+      const info = jwt.verify(parts[1], config.JWT_KEY) as jwt.JwtPayload;
+      if (!(await AuthGetSessionUser(info))) {
+        logger.warn(`Revoked or unknown session for user: ${info.userName}`);
+        return userSession;
+      }
       userSession.userId = info.userId;
       userSession.isAuthenticated = true;
     } catch (err) {

@@ -14,11 +14,12 @@ import * as path from "path";
 import { Config } from "./Config";
 import {
   OTelLogger,
-  OTelRequestSpan,
   OTelSetMeter,
   OTelSetTracer,
   OTelTracer,
 } from "./OTelContext";
+import { RegisterErrorHandler, RegisterNotFoundHandler } from "./ErrorHandlers";
+import { RetentionConfig } from "./Retention";
 import {
   AuthInit,
   AuthRenewSession,
@@ -42,15 +43,21 @@ Promise.resolve().then(async () => {
   const config = new Config();
   await config.reload((msg) => logger.info(msg));
   AuthValidateJWTKey(config.JWT_KEY);
-  if (
-    !Number.isInteger(config.NOTIFICATION_RETENTION_DAYS) ||
-    config.NOTIFICATION_RETENTION_DAYS < 0
-  ) {
-    throw new Error("NOTIFICATION_RETENTION_DAYS must be a non-negative integer");
-  }
+  const retention = new RetentionConfig(config.NOTIFICATION_RETENTION_DAYS);
   watchFile(config.CONFIG_FILE, () => {
     logger.info(`Config updated: ${config.CONFIG_FILE}`);
-    config.reload((msg) => logger.info(msg));
+    config
+      .reload((msg) => logger.info(msg))
+      .then(() => {
+        if (!retention.apply(config.NOTIFICATION_RETENTION_DAYS)) {
+          logger.warn(
+            `Invalid NOTIFICATION_RETENTION_DAYS=${config.NOTIFICATION_RETENTION_DAYS} after config reload; keeping ${retention.days}`,
+          );
+        }
+      })
+      .catch((error) => {
+        logger.error("Config reload failed", toError(error));
+      });
   });
 
   OTelSetTracer(new StandardTracer(config));
@@ -76,10 +83,8 @@ Promise.resolve().then(async () => {
   span.end();
 
   const pruneNotifications = async (): Promise<void> => {
-    if (config.NOTIFICATION_RETENTION_DAYS === 0) return;
-    const cutoff = new Date(
-      Date.now() - config.NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const cutoff = retention.cutoff();
+    if (!cutoff) return;
     const pruneSpan = OTelTracer().startSpan("notifications.retention");
     try {
       await NotificationsDataPrune(pruneSpan, cutoff);
@@ -116,7 +121,10 @@ Promise.resolve().then(async () => {
 
   // API
 
-  const fastify = Fastify({ bodyLimit: 1024 * 1024 });
+  const fastify = Fastify({
+    bodyLimit: 1024 * 1024,
+    trustProxy: ["loopback", "linklocal", "uniquelocal"],
+  });
 
   fastify.addHook("onSend", async (_request, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
@@ -124,19 +132,15 @@ Promise.resolve().then(async () => {
     reply.header("Referrer-Policy", "no-referrer");
     reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    // 'unsafe-inline' is required by the Nuxt static output (inline importmap,
+    // payload scripts and styles); no external scripts are allowed.
+    reply.header(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; base-uri 'self'; frame-ancestors 'none'",
+    );
   });
 
-  fastify.setErrorHandler(
-    (error: Error & { statusCode?: number }, request, reply) => {
-      if (error.statusCode && error.statusCode < 500) {
-        return reply
-          .status(error.statusCode)
-          .send({ error: error.message || "Bad Request" });
-      }
-      logger.error("Unhandled API error", error, OTelRequestSpan(request));
-      return reply.status(500).send({ error: "Internal Server Error" });
-    },
-  );
+  RegisterErrorHandler(fastify);
 
   if (config.CORS_POLICY_ORIGIN) {
     fastify.register(cors, {
@@ -178,16 +182,7 @@ Promise.resolve().then(async () => {
     wildcard: false,
   });
 
-  fastify.setNotFoundHandler((request, reply) => {
-    if (
-      request.raw.url &&
-      !request.raw.url.startsWith("/api/") &&
-      !path.extname(request.raw.url)
-    ) {
-      return reply.sendFile("index.html");
-    }
-    reply.status(404).send({ error: "Not Found" });
-  });
+  RegisterNotFoundHandler(fastify);
 
   await fastify.listen({ port: config.API_PORT, host: "0.0.0.0" });
   logger.info("API Listening");

@@ -13,7 +13,7 @@ export class ApiTokensRoutes {
     fastify.get("/", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const tokens = await ApiTokensList(OTelRequestSpan(req));
       return res.status(200).send({ tokens });
@@ -28,12 +28,13 @@ export class ApiTokensRoutes {
     fastify.post<PostToken>("/", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
-      if (!req.body.name) {
+      const name = req.body?.name;
+      if (!name || typeof name !== "string" || name.trim() === "") {
         return res.status(400).send({ error: "Missing: name" });
       }
-      const token = await ApiTokensCreate(OTelRequestSpan(req), req.body.name);
+      const token = await ApiTokensCreate(OTelRequestSpan(req), name);
       return res.status(201).send(token);
     });
 
@@ -41,10 +42,13 @@ export class ApiTokensRoutes {
     fastify.delete("/:id", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
-        return res.status(403).send({ error: "Access Denied" });
+        return res.status(401).send({ error: "Access Denied" });
       }
       const { id } = req.params as { id: string };
-      await ApiTokensDelete(OTelRequestSpan(req), id);
+      const deleted = await ApiTokensDelete(OTelRequestSpan(req), id);
+      if (!deleted) {
+        return res.status(404).send({ error: "API token not found" });
+      }
       return res.status(200).send({ success: true });
     });
   }
