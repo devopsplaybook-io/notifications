@@ -1,6 +1,5 @@
 const Database = require("better-sqlite3");
 const mockDatabase = new Database(":memory:");
-const mockCounterAdd = jest.fn();
 jest.mock("uuid", () => ({ v4: () => "generated-id" }));
 jest.mock("@devopsplaybook.io/common-utils", () => ({
   DbUtilsExecSQL: jest.fn((_, query, parameters = []) =>
@@ -14,9 +13,6 @@ jest.mock("../dist/OTelContext", () => ({
   OTelTracer: () => ({ startSpan: () => ({ end: jest.fn() }) }),
   OTelLogger: () => ({
     createModuleLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
-  }),
-  OTelMeter: () => ({
-    createCounter: () => ({ add: mockCounterAdd }),
   }),
 }));
 
@@ -62,7 +58,6 @@ describe("notification data operations", () => {
     };
     const created = await NotificationsDataAdd(undefined, notification);
     expect(created.id).toBe("generated-id");
-    expect(mockCounterAdd).toHaveBeenCalledWith(1);
     const rows = await NotificationsDataList(
       undefined,
       10,
