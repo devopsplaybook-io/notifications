@@ -5,11 +5,10 @@ import {
   DbUtilsExecSQL,
   DbUtilsQuerySQL,
 } from "@devopsplaybook.io/common-utils";
-import { OTelLogger, OTelMeter, OTelTracer } from "../OTelContext";
+import { OTelLogger, OTelTracer } from "../OTelContext";
 import { Notification } from "../model/Notification";
 
 const logger = OTelLogger().createModuleLogger(path.basename(__filename));
-let notificationsCreatedCounter: { add: (value: number) => void };
 
 /** Read-state filter: "all" (default), "unread" or "read". */
 export type NotificationReadFilter = "all" | "unread" | "read";
@@ -109,10 +108,6 @@ export async function NotificationsDataAdd(
         notification.read ? 1 : 0,
       ],
     );
-    notificationsCreatedCounter ??= OTelMeter().createCounter(
-      "notifications.created",
-    );
-    notificationsCreatedCounter.add(1);
     logger.info(`Notification added: ${notification.title}`, span);
     return notification;
   } finally {
