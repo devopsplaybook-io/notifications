@@ -52,6 +52,12 @@ jest.mock("../dist/notifications/PushService", () => ({
   PushUnsubscribe: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock("../dist/emails/EmailService", () => ({
+  EmailEvaluateNotification: jest.fn().mockResolvedValue(undefined),
+  EmailIsConfigured: jest.fn().mockReturnValue(false),
+  EmailSendTest: jest.fn().mockResolvedValue(undefined),
+}));
+
 const Fastify = require("fastify");
 const { AuthGetUserSession } = require("../dist/users/Auth");
 const { ApiTokensValidate } = require("../dist/apitokens/ApiTokensData");
@@ -60,6 +66,7 @@ const {
   PushSubscribe,
   PushUnsubscribe,
 } = require("../dist/notifications/PushService");
+const { EmailEvaluateNotification } = require("../dist/emails/EmailService");
 const { NotificationsRoutes } = require("../dist/notifications/NotificationsRoutes");
 const { PushRoutes } = require("../dist/notifications/PushRoutes");
 
@@ -131,6 +138,27 @@ describe("notification routes", () => {
         '{"nested":true}',
       );
     }
+  });
+
+  test("evaluates email rules for created notifications without failing the API call", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/notifications",
+      headers: { authorization: "Bearer api-token" },
+      payload: { title: "Test" },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(EmailEvaluateNotification).toHaveBeenCalledTimes(1);
+    expect(EmailEvaluateNotification.mock.calls[0][1].title).toBe("Test");
+
+    EmailEvaluateNotification.mockRejectedValueOnce(new Error("rules db down"));
+    const resilient = await app.inject({
+      method: "POST",
+      url: "/notifications",
+      headers: { authorization: "Bearer api-token" },
+      payload: { title: "Test" },
+    });
+    expect(resilient.statusCode).toBe(201);
   });
 
   test("rejects invalid notification data and reports missing deletes", async () => {

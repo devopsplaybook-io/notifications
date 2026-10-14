@@ -8,6 +8,8 @@ Centralized notification service for the DevOpsPlaybook.io ecosystem.
 - Single-tenant web UI with shared read state and push notifications
 - API tokens for integrations and JWT sessions for the web UI
 - Configurable 90-day notification retention
+- Consolidated Settings page (account, change password, theme, API keys, email rules)
+- Email notification rules with SMTP configuration from environment variables
 
 ## Architecture
 
@@ -40,14 +42,40 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 | `GET /api/push/publickey` | none | Returns the Web Push VAPID public key |
 | `POST /api/push/subscribe` | `Bearer <session>` | `{ "subscription": PushSubscriptionJSON }`; endpoint and encryption keys are validated; re-subscribing an endpoint updates it in place |
 | `DELETE /api/push/subscribe` | `Bearer <session>` | `{ "endpoint": "https://..." }`; removes the browser's stored subscription |
+| `GET /api/emails/rules` | `Bearer <session>` | Returns `{ "rules": [] }`; each rule is `{ "id", "source", "severity", "recipient", "createdAt" }` |
+| `POST /api/emails/rules` | `Bearer <session>` | `{ "recipient": string }`; optional `source` and `severity` (empty or omitted = wildcard). Returns the created rule |
+| `PUT /api/emails/rules/:id` | `Bearer <session>` | Same payload as creation; unknown IDs return 404 |
+| `DELETE /api/emails/rules/:id` | `Bearer <session>` | Removes the rule; unknown IDs return 404 |
+| `GET /api/emails/status` | `Bearer <session>` | Returns `{ "smtpConfigured": boolean }` |
+| `POST /api/emails/test` | `Bearer <session>` | `{ "recipient": string }`; sends a test email, 502 on SMTP failure |
 
 Missing or malformed API credentials are rejected with 401 (403 is only returned for policy denials such as closed registration or a wrong old password on a password change). Invalid notification fields and push subscriptions return 400; internal 5xx details are not returned to clients.
 
 Push fan-out is asynchronous: `POST /api/notifications` enqueues the notification and returns immediately; a background in-memory queue delivers it with up to 3 attempts (exponential backoff, five-second timeout per send, ten concurrent sends). Delivery is best-effort: queued items are lost if the pod restarts (single replica, `Recreate` strategy). Push payloads are bounded — the title is truncated at 200 characters and the body at 1000 (with an ellipsis), the `data` object is not pushed, and the notification click opens the app which loads the full record from the API. Expired 404/410 subscriptions are pruned; deliveries that exhaust their retries are logged and counted in the `push.failures` metric.
 
+## Email notification rules
+
+Email rules email a new notification to a recipient when its source ("service") and severity match the rule. Each rule selects a service, a severity and a recipient; an empty service and/or severity acts as a wildcard (for example "all errors from any service" or "everything from fluxcd"). Matching is an exact, case-insensitive comparison — severities are not thresholds — and several rules can point at the same recipient, in which case the notification is emailed once per recipient. Rules are evaluated at creation time only: no retroactive emails are sent for notifications stored before the rule.
+
+Delivery follows the same best-effort pattern as push: a background in-memory queue with up to 3 attempts (exponential backoff, ten-second timeout per send, three concurrent sends); evaluation or delivery failures never fail the `POST /api/notifications` call and deliveries that exhaust their retries are counted in the `email.failures` metric. Queued emails are lost if the pod restarts. The HTML part of the email escapes every producer-controlled field (title, body, source).
+
+The SMTP configuration comes from environment variables and is never stored in the database nor returned by the API:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SMTP_HOST` | empty | SMTP server host; empty disables the email feature (rules keep working, nothing is sent) |
+| `SMTP_PORT` | `587` | SMTP server port |
+| `SMTP_SECURE` | `false` | `true` for implicit TLS (port 465); `false` upgrades with STARTTLS |
+| `SMTP_USER` | empty | SMTP user; empty disables authentication |
+| `SMTP_PASSWORD` | empty | SMTP password (sensitive) |
+| `SMTP_FROM` | empty | From address; required together with `SMTP_HOST` for deliveries |
+| `APP_PUBLIC_URL` | `https://notifications.didierhoarau.cloud` | Link included in the email body |
+
+Rules, the SMTP status and a "send test email" action are managed in the web UI under Settings → Email.
+
 ## Single-tenant setup and security
 
-Create the initial account once through `/users`; account creation closes after the first user is stored. Notifications and read state are deployment-wide, not user-specific. All sessions share notification visibility, read state, delete permissions and API-token management. Do not expose additional accounts as isolated users; this deployment intentionally has a single administrator-equivalent account.
+Create the initial account once through Settings → Profile (`/users` and `/tokens` redirect to their new Settings locations); account creation closes after the first user is stored. The web UI navigation has a Notifications entry and a single Settings entry with Profile (account, change password, theme), API Keys and Email tabs. Notifications and read state are deployment-wide, not user-specific. All sessions share notification visibility, read state, delete permissions and API-token management. Do not expose additional accounts as isolated users; this deployment intentionally has a single administrator-equivalent account.
 
 Configure `JWT_KEY` with at least 32 characters. The service fails at startup if it is missing or weak. The key is read from the environment only and is never stored in the database (migration `init-0005` purges the legacy `metadata.auth_token` copy). Rotating `JWT_KEY` and restarting the service invalidates all existing sessions; clients simply log in again. Browser CORS is restricted to `https://notifications.didierhoarau.cloud`; API-token clients that do not use browsers are unaffected. Login and registration are throttled by client IP and username; token refreshes with a valid session are exempt. Sessions are bound to a per-user `tokenVersion`: changing the password or calling `/api/users/logout` revokes all of the user's sessions (tokens issued before this migration carry no version claim and count as version 0, so existing sessions stay valid until revoked). Security response headers are applied by the API, including a Content-Security-Policy that allows only same-origin resources plus the inline scripts and styles required by the static Nuxt build.
 

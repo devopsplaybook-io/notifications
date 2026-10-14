@@ -50,6 +50,19 @@ export class AuthService {
     }
   }
 
+  public static async getUserName(): Promise<string> {
+    const token = await AuthService.getToken();
+    if (!token) {
+      return "";
+    }
+    try {
+      const decoded = jwtDecode(token) as { userName?: unknown };
+      return typeof decoded.userName === "string" ? decoded.userName : "";
+    } catch {
+      return "";
+    }
+  }
+
   public static async getAuthHeader(): Promise<any> {
     try {
       const token = await AuthService.getToken();
