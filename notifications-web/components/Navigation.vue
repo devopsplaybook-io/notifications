@@ -38,9 +38,11 @@
   </nav>
 </template>
 
-<script>
+<script lang="ts">
 import axios from "axios";
 import Config from "~~/services/Config.ts";
+import { AuthService } from "~~/services/AuthService";
+import { PreferencesService } from "~/services/PreferencesService";
 
 export default {
   watch: {
@@ -74,8 +76,8 @@ export default {
     PreferencesService.applyTheme();
   },
   methods: {
-    routeUpdated(newRoute) {
-      this.activeRoute = newRoute.fullPath.split("/")[1];
+    routeUpdated(newRoute: { fullPath: string }) {
+      this.activeRoute = newRoute.fullPath.split("/")[1] ?? "";
     },
   },
 };
