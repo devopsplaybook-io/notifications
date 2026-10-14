@@ -15,6 +15,7 @@ import { AuthGetUserSession } from "../users/Auth";
 import { ApiTokensValidate } from "../apitokens/ApiTokensData";
 import { Notification } from "../model/Notification";
 import { PushSendToAll } from "./PushService";
+import { EmailEvaluateNotification } from "../emails/EmailService";
 
 const logger = OTelLogger().createModuleLogger("NotificationsRoutes");
 const toError = (error: unknown): Error =>
@@ -192,6 +193,18 @@ export class NotificationsRoutes {
         // Push failure should not fail the API response
         logger.error(
           "Push notification fan-out failed",
+          toError(error),
+          OTelRequestSpan(req),
+        );
+      }
+
+      // Email the recipients of matching rules
+      try {
+        await EmailEvaluateNotification(OTelRequestSpan(req), created);
+      } catch (error) {
+        // Rule evaluation failure should not fail the API response
+        logger.error(
+          "Email rule evaluation failed",
           toError(error),
           OTelRequestSpan(req),
         );

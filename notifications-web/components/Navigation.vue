@@ -26,41 +26,17 @@
           <span class="nav-label">Notifications</span>
         </NuxtLink>
       </li>
-      <li v-if="authenticationStore.isAuthenticated">
-        <NuxtLink
-          to="/tokens"
-          :class="activeRoute == 'tokens' ? 'active' : 'inactive'"
-          ><i class="bi bi-key-fill"></i>
-          <span class="nav-label">API Tokens</span></NuxtLink
-        >
-      </li>
       <li>
         <NuxtLink
-          to="/users"
-          :class="activeRoute == 'users' ? 'active' : 'inactive'"
-          ><i class="bi bi-person-circle"></i>
-          <span class="nav-label">Users</span></NuxtLink
+          to="/settings"
+          :class="activeRoute == 'settings' ? 'active' : 'inactive'"
+          ><i class="bi bi-gear-fill"></i>
+          <span class="nav-label">Settings</span></NuxtLink
         >
-      </li>
-      <li>
-        <button class="theme-toggle" @click="toggleTheme" title="Toggle theme">
-          <i class="bi bi-moon-fill"></i>
-        </button>
       </li>
     </ul>
   </nav>
 </template>
-
-<script setup>
-import { AuthService } from "~~/services/AuthService";
-import { PreferencesService } from "~/services/PreferencesService";
-const authenticationStore = AuthenticationStore();
-const notificationsStore = NotificationsStore();
-
-function toggleTheme() {
-  PreferencesService.toggleTheme();
-}
-</script>
 
 <script>
 import axios from "axios";
@@ -75,6 +51,8 @@ export default {
   data() {
     return {
       activeRoute: "",
+      authenticationStore: AuthenticationStore(),
+      notificationsStore: NotificationsStore(),
     };
   },
   async created() {
@@ -157,15 +135,6 @@ export default {
   background: var(--color-primary);
   color: #fff;
   font-size: 0.7rem;
-}
-
-.theme-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.2em;
-  color: var(--color-text);
-  padding: 0;
 }
 
 @media (max-width: 1000px) {

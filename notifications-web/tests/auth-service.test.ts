@@ -81,4 +81,23 @@ describe("auth token robustness", () => {
     await AuthService.removeToken();
     expect(localStorage.getItem("auth_token")).toBeNull();
   });
+
+  it("returns the userName claim of the stored token", async () => {
+    await expect(AuthService.getUserName()).resolves.toBe("");
+
+    await AuthService.saveToken(
+      jwtWith({
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        userName: "didier",
+      }),
+    );
+    await expect(AuthService.getUserName()).resolves.toBe("didier");
+  });
+
+  it("returns an empty user name when the claim is missing", async () => {
+    await AuthService.saveToken(
+      jwtWith({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+    );
+    await expect(AuthService.getUserName()).resolves.toBe("");
+  });
 });

@@ -31,6 +31,8 @@ import { ApiTokensRoutes } from "./apitokens/ApiTokensRoutes";
 import { ApiTokensMigrateToHashed } from "./apitokens/ApiTokensData";
 import { PushInit } from "./notifications/PushService";
 import { PushRoutes } from "./notifications/PushRoutes";
+import { EmailInit } from "./emails/EmailService";
+import { EmailRulesRoutes } from "./emails/EmailRulesRoutes";
 import { NotificationsDataPrune } from "./notifications/NotificationsData";
 
 const logger = OTelLogger().createModuleLogger("app");
@@ -79,6 +81,7 @@ Promise.resolve().then(async () => {
   await AuthInit(span, config);
   await ApiTokensMigrateToHashed(span);
   PushInit(config);
+  EmailInit(config);
 
   span.end();
 
@@ -170,6 +173,9 @@ Promise.resolve().then(async () => {
   });
   fastify.register(new PushRoutes().getRoutes, {
     prefix: "/api/push",
+  });
+  fastify.register(new EmailRulesRoutes().getRoutes, {
+    prefix: "/api/emails",
   });
 
   fastify.get("/api/status", async () => {

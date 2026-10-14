@@ -57,14 +57,18 @@ describe("preferences service", () => {
     expect(attributes.get("data-theme")).toBe("light");
   });
 
-  it("falls back to the system preference and toggles from it", () => {
+  it("falls back to the system preference", () => {
     prefersDark = true;
 
     PreferencesService.applyTheme();
     expect(attributes.get("data-theme")).toBe("dark");
+  });
 
-    PreferencesService.toggleTheme();
+  it("ignores an unknown stored theme value", () => {
+    localStorage.setItem("UI_THEME", "blue");
+    prefersDark = false;
+
+    PreferencesService.applyTheme();
     expect(attributes.get("data-theme")).toBe("light");
-    expect(localStorage.getItem("UI_THEME")).toBe("light");
   });
 });
