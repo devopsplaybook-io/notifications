@@ -11,27 +11,27 @@
     "test": "npm run typecheck && vitest run --coverage"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.5",
     "@vitejs/plugin-vue": "^6.0.10",
-    "@vitest/coverage-v8": "^5.0.3",
+    "@vitest/coverage-v8": "^5.0.5",
     "@vue/test-utils": "^2.5.1",
     "happy-dom": "^21.0.1",
-    "nuxt": "^4.5.2",
-    "oxlint": "^1.86.0",
+    "nuxt": "^4.6.1",
+    "oxlint": "^1.88.0",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.3",
-    "vue-tsc": "^3.3.11"
+    "vitest": "^5.0.5",
+    "vue-tsc": "^3.3.13"
   },
   "dependencies": {
     "@devopsplaybook.io/common-web": "^0.3.0",
     "@picocss/pico": "^2.1.1",
-    "@pinia/nuxt": "^1.0.2",
-    "@vueuse/core": "^14.4.0",
+    "@pinia/nuxt": "^1.0.3",
+    "@vueuse/core": "^15.0.0",
     "axios": "^1.20.0",
-    "bootstrap-icons": "^1.13.1",
-    "dompurify": "^3.4.16",
+    "bootstrap-icons": "^1.13.2",
+    "dompurify": "^3.4.17",
     "jwt-decode": "^4.0.0",
-    "marked": "^18.0.14",
-    "pinia": "^4.0.3"
+    "marked": "^18.1.1",
+    "pinia": "^4.1.0"
   }
 }

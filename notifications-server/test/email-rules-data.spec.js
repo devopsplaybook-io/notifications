@@ -38,6 +38,7 @@ DbUtilsSetOTel(
   {
     startSpan: () => ({
       addEvent: jest.fn(),
+      setAttributes: jest.fn(),
       setStatus: jest.fn(),
       end: jest.fn(),
     }),
