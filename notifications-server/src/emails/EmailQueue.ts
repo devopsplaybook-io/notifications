@@ -1,4 +1,6 @@
 import * as nodemailer from "nodemailer";
+import { marked } from "marked";
+import sanitizeHtml from "sanitize-html";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OTelLogger, OTelMeter, OTelTracer } from "../OTelContext";
 import { Config } from "../Config";
@@ -74,10 +76,56 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+const BODY_SANITIZER_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    "p", "br", "strong", "em", "del", "s", "code", "pre",
+    "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+    "blockquote", "hr", "a", "table", "thead", "tbody", "tr", "th", "td", "img",
+  ],
+  allowedAttributes: {
+    a: ["href", "title"],
+    img: ["src", "alt", "title"],
+    th: ["align"],
+    td: ["align"],
+    code: ["class"],
+    pre: ["class", "style"],
+    blockquote: ["style"],
+  },
+  allowedSchemes: ["http", "https", "mailto"],
+  allowProtocolRelative: false,
+  transformTags: {
+    pre: (tagName, attribs) => ({
+      tagName,
+      attribs: {
+        ...attribs,
+        style: "background: #f6f8fa; padding: 12px; overflow-x: auto; white-space: pre-wrap;",
+      },
+    }),
+    blockquote: (tagName, attribs) => ({
+      tagName,
+      attribs: {
+        ...attribs,
+        style: "border-left: 4px solid #d0d7de; margin: 0 0 8px 0; padding-left: 12px; color: #666;",
+      },
+    }),
+  },
+};
+
 /**
- * Build the email for a notification. The title/body come from API-token
- * producers, so the HTML part escapes every value; a plain-text part is
- * always included.
+ * Render a notification body as email-safe HTML: markdown is interpreted the
+ * same way as in the web UI (GFM + line breaks), then sanitized with an
+ * allowlist so producer content can never inject scripts, styles or event
+ * handlers.
+ */
+export function RenderBodyHtml(body: string): string {
+  const html = marked.parse(body, { gfm: true, breaks: true }) as string;
+  return sanitizeHtml(html, BODY_SANITIZER_OPTIONS);
+}
+
+/**
+ * Build the email for a notification. The title/severity/source are escaped
+ * and the body is markdown-rendered then sanitized (bodies come from API-token
+ * producers); a plain-text part is always included.
  */
 export function BuildEmailMessage(
   notification: Notification,
@@ -102,13 +150,12 @@ export function BuildEmailMessage(
     received ? `Received: ${received}` : "",
     link ? `Open: ${link}` : "",
   ].filter((part) => part !== "");
-  const bodyHtml = escapeHtml(notification.body || "").replace(/\n/g, "<br>");
   const htmlParts = [
     `<p><strong>${escapeHtml(severity)}</strong>${
       source ? ` from <strong>${escapeHtml(source)}</strong>` : ""
     }</p>`,
     `<h3>${escapeHtml(notification.title || "")}</h3>`,
-    notification.body ? `<p>${bodyHtml}</p>` : "",
+    notification.body ? `<div>${RenderBodyHtml(notification.body)}</div>` : "",
     received ? `<p style="color: #666">Received: ${escapeHtml(received)}</p>` : "",
     link
       ? `<p><a href="${escapeHtml(link)}">Open Notifications</a></p>`

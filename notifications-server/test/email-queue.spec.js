@@ -57,7 +57,7 @@ afterEach(async () => {
 });
 
 describe("email message", () => {
-  test("builds subject, text and escaped html parts", () => {
+  test("builds subject, text and html parts with a rendered body", () => {
     EmailQueueSetTransport({ sendMail: mockSendMail }, "noreply@example.com", "https://app.example");
 
     const message = BuildEmailMessage(
@@ -70,12 +70,59 @@ describe("email message", () => {
     expect(message.text).toContain("success from ci");
     expect(message.text).toContain("Deployment <failed>");
     expect(message.text).toContain("Open: https://app.example");
+    // The title is escaped plain text; the body is markdown-rendered inside a
+    // div (markdown emits block elements, so a <p> wrapper would be invalid).
     expect(message.html).toContain("&lt;failed&gt;");
-    expect(message.html).toContain("log &amp; retry<br>Second line");
+    expect(message.html).toContain("<div><p>See log &amp; retry<br />Second line</p>");
     expect(message.html).toContain('href="https://app.example"');
   });
 
-  test("escapes html in every producer-controlled field", () => {
+  test("renders markdown links and drops unsafe urls", () => {
+    const message = BuildEmailMessage(
+      notification({
+        body: "[docs](https://docs.example) and [bad](javascript:alert(1)) and [proto](//evil.com)",
+      }),
+      "user@example.com",
+    );
+    expect(message.html).toContain('<a href="https://docs.example">docs</a>');
+    expect(message.html).not.toContain("javascript:");
+    expect(message.html).not.toContain("//evil.com");
+    expect(message.html).toContain("<a>bad</a>");
+  });
+
+  test("renders headings, lists, code blocks and tables", () => {
+    const message = BuildEmailMessage(
+      notification({
+        body: [
+          "## Title",
+          "",
+          "- one",
+          "- two",
+          "",
+          "```js",
+          "console.log(1);",
+          "```",
+          "",
+          "| a | b |",
+          "| --- | --- |",
+          "| 1 | 2 |",
+        ].join("\n"),
+      }),
+      "user@example.com",
+    );
+    expect(message.html).toContain("<h2>Title</h2>");
+    expect(message.html).toContain("<li>one</li>");
+    expect(message.html).toContain("<pre style=");
+    expect(message.html).toContain('class="language-js"');
+    expect(message.html).toContain("<table>");
+  });
+
+  test("renders a body without markdown as a plain paragraph", () => {
+    const message = BuildEmailMessage(notification({ body: "Done" }), "user@example.com");
+    expect(message.html).toContain("<div><p>Done</p>");
+  });
+
+  test("sanitizes the body and escapes the other producer-controlled fields", () => {
     const message = BuildEmailMessage(
       notification({
         title: '<img src=x onerror="alert(1)">',
@@ -85,9 +132,10 @@ describe("email message", () => {
       }),
       "user@example.com",
     );
-    expect(message.html).not.toContain("<script>");
+    expect(message.html).not.toContain("<script");
+    expect(message.html).not.toContain("&lt;script&gt;"); // stripped, not shown escaped
     expect(message.html).not.toContain("<img");
-    expect(message.html).toContain("&lt;script&gt;");
+    expect(message.html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     // The subject is plain text (MIME-encoded by nodemailer), not HTML
     expect(message.subject).toContain('err"or');
     expect(message.html).toContain("err&quot;or");
