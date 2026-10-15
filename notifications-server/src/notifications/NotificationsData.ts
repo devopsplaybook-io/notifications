@@ -218,11 +218,34 @@ export async function NotificationsDataDelete(
 
 export async function NotificationsDataDeleteAll(
   context: Span,
+  source = "",
+  read: NotificationReadFilter = "all",
 ): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataDeleteAll", context);
   try {
-    const deleted = await DbUtilsExecSQL(span, "DELETE FROM notifications", []);
-    logger.info(`All notifications deleted (${deleted} records)`, span);
+    const conditions: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const params: any[] = [];
+    if (source) {
+      conditions.push("source = ?");
+      params.push(source);
+    }
+    // "read"/"NOT read" work on both SQLite (0/1) and Postgres (BOOLEAN)
+    if (read === "unread") {
+      conditions.push("NOT read");
+    } else if (read === "read") {
+      conditions.push("read");
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const deleted = await DbUtilsExecSQL(
+      span,
+      `DELETE FROM notifications ${where}`,
+      params,
+    );
+    logger.info(
+      `Deleted ${deleted} notification(s) (source: ${source || "all"}, read: ${read})`,
+      span,
+    );
     return deleted;
   } finally {
     span.end();

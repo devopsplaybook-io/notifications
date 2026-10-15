@@ -170,19 +170,52 @@ describe("notification store", () => {
     expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 
-  it("deletes all notifications and clears the unread badge", async () => {
+  it("deletes notifications matching the default unread filter and reloads the list", async () => {
     mockedAxios.delete.mockResolvedValueOnce({} as any);
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { notifications: [], total: 0 } } as any)
+      .mockResolvedValueOnce({ data: { total: 0 } } as any);
     const store = NotificationsStore();
     store.notifications = [{ id: "1" }];
     store.total = 1;
     store.unreadCount = 1;
+
     await store.deleteAll();
+
     expect(mockedAxios.delete).toHaveBeenCalledWith(
-      "/api/notifications",
+      "/api/notifications?read=unread",
       expect.anything(),
+    );
+    expect(mockedAxios.get.mock.calls[0]![0]).toBe(
+      "/api/notifications?limit=50&offset=0&read=unread",
     );
     expect(store.notifications).toEqual([]);
     expect(store.total).toBe(0);
     expect(store.unreadCount).toBe(0);
+  });
+
+  it("scopes delete-all to the current read and source filters and reflects the reload", async () => {
+    mockedAxios.delete.mockResolvedValueOnce({} as any);
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: { notifications: [{ id: "2" }], total: 1 },
+      } as any)
+      .mockResolvedValueOnce({ data: { total: 1 } } as any);
+    const store = NotificationsStore();
+    store.notifications = [{ id: "1" }];
+    store.total = 2;
+    store.unreadCount = 1;
+    store.readFilter = "all";
+    store.sourceFilter = "build";
+
+    await store.deleteAll();
+
+    expect(mockedAxios.delete).toHaveBeenCalledWith(
+      "/api/notifications?read=all&source=build",
+      expect.anything(),
+    );
+    expect(store.notifications.map((item) => item.id)).toEqual(["2"]);
+    expect(store.total).toBe(1);
+    expect(store.unreadCount).toBe(1);
   });
 });

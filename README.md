@@ -38,7 +38,7 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 | `PUT /api/notifications/:id/read` | `Bearer <session>` | `{ "read": boolean }`; unknown IDs return 404 |
 | `PUT /api/notifications/read-all` | `Bearer <session>` | Optional `source` and `read` filters |
 | `DELETE /api/notifications/:id` | `Bearer <session>` | Unknown IDs return 404 |
-| `DELETE /api/notifications` | `Bearer <session>` | Deletes all deployment-wide notifications |
+| `DELETE /api/notifications` | `Bearer <session>` | Deletes notifications matching the optional `source` and `read` filters (no filters = all) |
 | `GET /api/push/publickey` | none | Returns the Web Push VAPID public key |
 | `POST /api/push/subscribe` | `Bearer <session>` | `{ "subscription": PushSubscriptionJSON }`; endpoint and encryption keys are validated; re-subscribing an endpoint updates it in place |
 | `DELETE /api/push/subscribe` | `Bearer <session>` | `{ "endpoint": "https://..." }`; removes the browser's stored subscription |

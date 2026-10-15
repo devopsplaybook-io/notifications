@@ -277,6 +277,44 @@ describe("notification routes", () => {
     expect(invalidProducer.statusCode).toBe(401);
   });
 
+  test("passes the delete-all filters to the data layer", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    notificationsData.NotificationsDataDeleteAll.mockResolvedValueOnce(2);
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/notifications?source=build&read=unread",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({ success: true, deleted: 2 });
+    expect(notificationsData.NotificationsDataDeleteAll).toHaveBeenCalledWith(
+      undefined,
+      "build",
+      "unread",
+    );
+  });
+
+  test("delete-all without filters deletes every notification", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/notifications",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(notificationsData.NotificationsDataDeleteAll).toHaveBeenCalledWith(
+      undefined,
+      "",
+      "all",
+    );
+  });
+
   test("rejects malformed push subscriptions with a client error", async () => {
     AuthGetUserSession.mockResolvedValueOnce({
       isAuthenticated: true,
