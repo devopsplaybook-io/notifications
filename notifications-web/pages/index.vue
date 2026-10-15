@@ -263,7 +263,7 @@ async function deleteNotification(id) {
 }
 
 async function deleteAll() {
-  if (window.confirm("Delete all notifications? This cannot be undone.")) {
+  if (window.confirm("Delete all notifications matching the current filters? This cannot be undone.")) {
     await notificationsStore.deleteAll();
   }
 }

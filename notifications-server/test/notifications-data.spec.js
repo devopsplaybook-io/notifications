@@ -23,6 +23,7 @@ const {
   NotificationsDataAdd,
   NotificationsDataCount,
   NotificationsDataDelete,
+  NotificationsDataDeleteAll,
   NotificationsDataList,
   NotificationsDataPrune,
 } = require("../dist/notifications/NotificationsData");
@@ -91,5 +92,32 @@ describe("notification data operations", () => {
 
   test("reports unknown notification deletes", async () => {
     expect(await NotificationsDataDelete(undefined, "missing")).toBe(false);
+  });
+
+  test("deletes only notifications matching the source and read filters", async () => {
+    const insert = mockDatabase.prepare(
+      'INSERT INTO notifications (id, title, body, source, severity, data, createdAt, "read") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    insert.run("build-unread", "Build unread", "", "build", "info", "{}", "2026-01-01T00:00:00.000Z", 0);
+    insert.run("build-read", "Build read", "", "build", "info", "{}", "2026-01-02T00:00:00.000Z", 1);
+    insert.run("deploy-unread", "Deploy unread", "", "deploy", "info", "{}", "2026-01-03T00:00:00.000Z", 0);
+    insert.run("deploy-read", "Deploy read", "", "deploy", "info", "{}", "2026-01-04T00:00:00.000Z", 1);
+
+    expect(await NotificationsDataDeleteAll(undefined, "build", "unread")).toBe(1);
+    expect(await NotificationsDataCount(undefined)).toBe(3);
+    expect(await NotificationsDataCount(undefined, "build")).toBe(1);
+    expect(await NotificationsDataCount(undefined, "deploy", "unread")).toBe(1);
+    expect(await NotificationsDataCount(undefined, "deploy", "read")).toBe(1);
+  });
+
+  test("deletes every notification when no filters are given", async () => {
+    const insert = mockDatabase.prepare(
+      'INSERT INTO notifications (id, title, body, source, severity, data, createdAt, "read") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    insert.run("build-unread", "Build unread", "", "build", "info", "{}", "2026-01-01T00:00:00.000Z", 0);
+    insert.run("deploy-read", "Deploy read", "", "deploy", "info", "{}", "2026-01-02T00:00:00.000Z", 1);
+
+    expect(await NotificationsDataDeleteAll(undefined)).toBe(2);
+    expect(await NotificationsDataCount(undefined)).toBe(0);
   });
 });

@@ -288,13 +288,28 @@ export class NotificationsRoutes {
       return res.status(200).send({ success: true, updated });
     });
 
-    // Delete all notifications (requires user auth)
-    fastify.delete("/", async (req, res) => {
+    // Delete all notifications matching the filters (requires user auth)
+    interface DeleteNotificationsAll extends RequestGenericInterface {
+      Querystring: {
+        source?: string;
+        read?: string;
+      };
+    }
+    fastify.delete<DeleteNotificationsAll>("/", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated) {
         return res.status(401).send({ error: "Access Denied" });
       }
-      const count = await NotificationsDataDeleteAll(OTelRequestSpan(req));
+      const source = req.query.source || "";
+      const read: NotificationReadFilter =
+        req.query.read === "unread" || req.query.read === "read"
+          ? req.query.read
+          : "all";
+      const count = await NotificationsDataDeleteAll(
+        OTelRequestSpan(req),
+        source,
+        read,
+      );
       return res.status(200).send({ success: true, deleted: count });
     });
   }

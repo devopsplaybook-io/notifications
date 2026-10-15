@@ -146,13 +146,12 @@ export const NotificationsStore = defineStore("NotificationsStore", {
     async deleteAll(): Promise<void> {
       try {
         const headers = await AuthService.getAuthHeader();
-        await axios.delete(
-          `${(await Config.get()).SERVER_URL}/notifications`,
-          headers,
-        );
-        this.notifications = [];
-        this.total = 0;
-        this.unreadCount = 0;
+        let url = `${(await Config.get()).SERVER_URL}/notifications?read=${this.readFilter}`;
+        if (this.sourceFilter) {
+          url += `&source=${encodeURIComponent(this.sourceFilter)}`;
+        }
+        await axios.delete(url, headers);
+        await this.loadNotifications();
       } catch (err) {
         console.error("Failed to delete notifications", err);
       }
