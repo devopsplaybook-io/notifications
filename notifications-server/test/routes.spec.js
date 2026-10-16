@@ -27,6 +27,7 @@ jest.mock("../dist/notifications/NotificationsData", () => ({
     ...notification,
     id: "notification-id",
   })),
+  NotificationsDataGet: jest.fn().mockResolvedValue(null),
   NotificationsDataCount: jest.fn().mockResolvedValue(12),
   NotificationsDataDelete: jest.fn().mockResolvedValue(false),
   NotificationsDataDeleteAll: jest.fn().mockResolvedValue(0),
@@ -161,6 +162,63 @@ describe("notification routes", () => {
     expect(resilient.statusCode).toBe(201);
   });
 
+  test("returns a single notification for session and API token callers", async () => {
+    const stored = { id: "notification-id", title: "Test", read: true };
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    notificationsData.NotificationsDataGet.mockResolvedValueOnce(stored);
+    const withSession = await app.inject({
+      method: "GET",
+      url: "/notifications/notification-id",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(withSession.statusCode).toBe(200);
+    expect(JSON.parse(withSession.body)).toEqual(stored);
+    expect(notificationsData.NotificationsDataGet).toHaveBeenCalledWith(
+      undefined,
+      "notification-id",
+    );
+
+    notificationsData.NotificationsDataGet.mockResolvedValueOnce(stored);
+    const withApiToken = await app.inject({
+      method: "GET",
+      url: "/notifications/notification-id",
+      headers: { authorization: "Bearer api-token" },
+    });
+    expect(withApiToken.statusCode).toBe(200);
+    expect(JSON.parse(withApiToken.body)).toEqual(stored);
+  });
+
+  test("returns 404 for an unknown notification id", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/notifications/missing",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body).error).toContain("not found");
+  });
+
+  test("still serves /sources now that a /:id route is registered", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/notifications/sources",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({ sources: [] });
+  });
+
   test("rejects invalid notification data and reports missing deletes", async () => {
     const invalidData = await app.inject({
       method: "POST",
@@ -243,6 +301,7 @@ describe("notification routes", () => {
     const unauthorizedRequests = [
       ["GET", "/notifications"],
       ["GET", "/notifications/sources"],
+      ["GET", "/notifications/notification-id"],
       ["DELETE", "/notifications/notification-id"],
       ["DELETE", "/notifications"],
       ["PUT", "/notifications/read-all"],

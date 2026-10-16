@@ -72,7 +72,7 @@ export async function NotificationsDataSources(
 export async function NotificationsDataGet(
   context: Span,
   id: string,
-): Promise<Notification> {
+): Promise<Notification | null> {
   const span = OTelTracer().startSpan("NotificationsDataGet", context);
   try {
     const result = await DbUtilsQuerySQL(

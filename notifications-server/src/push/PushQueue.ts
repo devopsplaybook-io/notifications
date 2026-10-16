@@ -37,8 +37,8 @@ function truncate(value: string, max: number): string {
 
 /**
  * Build the Web Push payload. Push services cap payloads at ~4 KB, so the
- * title/body are truncated and the full `data` object is omitted; the app
- * fetches the complete notification from the API.
+ * title/body are truncated and the full `data` object is omitted; the `url`
+ * deep link opens the exact notification in the web UI.
  */
 export function BuildPushPayload(notification: Notification): string {
   return JSON.stringify({
@@ -47,7 +47,7 @@ export function BuildPushPayload(notification: Notification): string {
     body: truncate(notification.body || "", PUSH_PAYLOAD_BODY_MAX),
     severity: notification.severity,
     source: notification.source,
-    url: "/",
+    url: `/?notification=${notification.id}`,
   });
 }
 

@@ -24,6 +24,7 @@ const {
   NotificationsDataCount,
   NotificationsDataDelete,
   NotificationsDataDeleteAll,
+  NotificationsDataGet,
   NotificationsDataList,
   NotificationsDataPrune,
 } = require("../dist/notifications/NotificationsData");
@@ -92,6 +93,23 @@ describe("notification data operations", () => {
 
   test("reports unknown notification deletes", async () => {
     expect(await NotificationsDataDelete(undefined, "missing")).toBe(false);
+  });
+
+  test("gets a stored notification with a normalized read flag", async () => {
+    const created = await NotificationsDataAdd(undefined, {
+      title: "Get me",
+      body: "",
+      source: "service",
+      severity: "info",
+      data: '{"run":4}',
+      read: false,
+    });
+    const fetched = await NotificationsDataGet(undefined, created.id);
+    expect(fetched.id).toBe("generated-id");
+    expect(fetched.title).toBe("Get me");
+    expect(fetched.data).toBe('{"run":4}');
+    expect(fetched.read).toBe(false);
+    expect(await NotificationsDataGet(undefined, "missing")).toBeNull();
   });
 
   test("deletes only notifications matching the source and read filters", async () => {

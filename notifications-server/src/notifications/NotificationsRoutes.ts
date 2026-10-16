@@ -3,6 +3,7 @@ import { OTelLogger, OTelRequestSpan } from "../OTelContext";
 import {
   NotificationsDataList,
   NotificationsDataAdd,
+  NotificationsDataGet,
   NotificationsDataCount,
   NotificationsDataDelete,
   NotificationsDataDeleteAll,
@@ -211,6 +212,27 @@ export class NotificationsRoutes {
       }
 
       return res.status(201).send(created);
+    });
+
+    // Get a single notification (requires user session or API token)
+    interface GetNotification extends RequestGenericInterface {
+      Params: {
+        id: string;
+      };
+    }
+    fastify.get<GetNotification>("/:id", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
+        return res.status(401).send({ error: "Access Denied" });
+      }
+      const notification = await NotificationsDataGet(
+        OTelRequestSpan(req),
+        req.params.id,
+      );
+      if (!notification) {
+        return res.status(404).send({ error: "Notification not found" });
+      }
+      return res.status(200).send(notification);
     });
 
     // Delete a single notification (requires user auth)
