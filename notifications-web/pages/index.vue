@@ -87,7 +87,15 @@
         <article
           v-for="n in notificationsStore.notifications"
           :key="n.id"
-          :class="['notification-card', { unread: !n.read, read: n.read }]"
+          :id="`notification-${n.id}`"
+          :class="[
+            'notification-card',
+            {
+              unread: !n.read,
+              read: n.read,
+              highlighted: n.id === highlightId,
+            },
+          ]"
         >
           <header>
             <div class="notification-header">
@@ -96,6 +104,17 @@
                 {{ n.title }}
               </h3>
               <div class="notification-actions">
+                <a
+                  v-if="notificationUrl(n)"
+                  class="open-btn"
+                  :href="notificationUrl(n)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open linked resource"
+                  aria-label="Open linked resource"
+                >
+                  <i class="bi bi-box-arrow-up-right"></i>
+                </a>
                 <span :class="'severity-badge severity-' + n.severity">{{
                   n.severity
                 }}</span>
@@ -117,8 +136,9 @@
               </div>
             </div>
             <div class="notification-meta">
-              <span
-                ><i class="bi bi-clock"></i> {{ formatDate(n.createdAt) }}</span
+              <span :title="formatAbsoluteTime(n.createdAt)"
+                ><i class="bi bi-clock"></i>
+                {{ formatRelativeTime(n.createdAt) }}</span
               >
               <span><i class="bi bi-app-indicator"></i> {{ n.source }}</span>
             </div>
@@ -142,6 +162,27 @@
               {{ n._expanded ? "Show less" : "Show more" }}
             </button>
           </section>
+          <section v-if="notificationData(n)" class="notification-data">
+            <dl>
+              <div
+                v-for="[key, value] in notificationData(n)"
+                :key="key"
+                class="notification-data-row"
+              >
+                <dt>{{ key }}</dt>
+                <dd>
+                  <a
+                    v-if="isHttpUrl(value)"
+                    :href="value"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >{{ value }}</a
+                  >
+                  <span v-else>{{ value }}</span>
+                </dd>
+              </div>
+            </dl>
+          </section>
         </article>
       </div>
       <div
@@ -164,9 +205,19 @@
 <script setup>
 import { PushService } from "~/services/PushService";
 import { RenderCache } from "~/services/RenderCache";
+import {
+  extractNotificationUrl,
+  formatAbsoluteTime,
+  formatRelativeTime,
+  isHttpUrl,
+  parseNotificationData,
+} from "~/services/NotificationFormat";
 
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
+const route = useRoute();
+const router = useRouter();
+const highlightId = ref("");
 const pushSupported = ref(false);
 const pushSubscribed = ref(false);
 const pushPermission = ref("denied");
@@ -211,14 +262,36 @@ function severityIcon(severity) {
   }
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleString();
-}
-
 function renderMarkdown(notification) {
   return RenderCache.renderMarkdown(notification.id, notification.body);
+}
+
+function notificationData(n) {
+  return parseNotificationData(n.data);
+}
+
+function notificationUrl(n) {
+  return extractNotificationUrl(n.data);
+}
+
+async function handleDeepLink() {
+  const id = route.query.notification;
+  if (typeof id !== "string" || id === "") {
+    return;
+  }
+  const notification = await notificationsStore.ensureNotificationVisible(id);
+  if (notification) {
+    highlightId.value = id;
+    notification._expanded = true;
+    if (!notification.read) {
+      await notificationsStore.markRead(id, true);
+    }
+    await nextTick();
+    document
+      .getElementById(`notification-${id}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  await router.replace({ query: { ...route.query, notification: undefined } });
 }
 
 function isLongContent(text) {
@@ -288,7 +361,8 @@ async function togglePush() {
 
 onMounted(async () => {
   if (await authenticationStore.ensureAuthenticated()) {
-    refreshNotifications();
+    await refreshNotifications();
+    await handleDeepLink();
     pushSupported.value = await PushService.isSupported();
     pushSubscribed.value = await PushService.isSubscribed();
     pushPermission.value = await PushService.getPermission();
@@ -377,6 +451,12 @@ onMounted(async () => {
   border-left-color: var(--color-primary);
 }
 
+.notification-card.highlighted {
+  border-left-color: var(--color-primary);
+  outline: 2px solid var(--color-primary);
+  background: var(--color-primary-light);
+}
+
 .notification-header {
   display: flex;
   justify-content: space-between;
@@ -396,6 +476,22 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-sm);
   flex-shrink: 0;
+}
+
+.open-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  padding: var(--space-xs);
+  font-size: var(--font-sm);
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.open-btn:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 
 .read-btn {
@@ -460,6 +556,35 @@ onMounted(async () => {
     var(--pico-card-background-color, var(--pico-background-color))
   );
   pointer-events: none;
+}
+
+.notification-data {
+  margin-top: var(--space-sm);
+  border-top: 1px solid var(--pico-muted-border-color);
+  padding-top: var(--space-xs);
+  font-size: var(--font-sm);
+}
+
+.notification-data dl {
+  margin: 0;
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.notification-data-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: var(--space-sm);
+}
+
+.notification-data dt {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.notification-data dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Markdown content styling */

@@ -81,6 +81,34 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       }
     },
 
+    async getNotification(id: string): Promise<any | null> {
+      try {
+        const headers = await AuthService.getAuthHeader();
+        const res = await axios.get(
+          `${(await Config.get()).SERVER_URL}/notifications/${id}`,
+          headers,
+        );
+        return res.data;
+      } catch (err) {
+        console.error("Failed to load notification", err);
+        return null;
+      }
+    },
+
+    async ensureNotificationVisible(id: string): Promise<any | null> {
+      const existing = this.notifications.find((item) => item.id === id);
+      if (existing) {
+        return existing;
+      }
+      const notification = await this.getNotification(id);
+      if (!notification) {
+        return null;
+      }
+      this.notifications.unshift(notification);
+      this.total += 1;
+      return notification;
+    },
+
     async setSourceFilter(source: string): Promise<void> {
       this.sourceFilter = source;
       await this.loadNotifications();

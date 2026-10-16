@@ -7,6 +7,8 @@ Centralized notification service for the DevOpsPlaybook.io ecosystem.
 - Fastify API for notification producers and consumers
 - Single-tenant web UI with shared read state and push notifications
 - API tokens for integrations and JWT sessions for the web UI
+- Notification cards render the `data` payload as key/value details (URLs become links), show relative timestamps and expose an "Open" action for embedded URLs
+- Deep links (`/?notification=<id>`) highlight, expand and mark the notification read; push taps land on the exact notification
 - Configurable 90-day notification retention
 - Consolidated Settings page (account, change password, theme, API keys, email rules)
 - Email notification rules with SMTP configuration from environment variables
@@ -34,6 +36,7 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 | `DELETE /api/tokens/:id` | `Bearer <session>` | Revokes an API token; unknown IDs return 404 |
 | `GET /api/notifications` | session or `Bearer <API token>` | `limit` (1-200, default 50), `offset` (non-negative), `source`, `read` (`all`, `read`, `unread`); returns `{ "notifications": [], "total": number }` |
 | `GET /api/notifications/sources` | session or API token | Returns `{ "sources": string[] }` |
+| `GET /api/notifications/:id` | session or API token | Returns the notification; unknown IDs return 404 |
 | `POST /api/notifications` | API token | Requires `title`; optional `body`, `source`, `severity`, and object-valued `data`. `data` may also be a JSON-encoded object string. `body` is capped at 10 KB and serialized `data` at 4 KB (both UTF-8); larger payloads return 400. |
 | `PUT /api/notifications/:id/read` | `Bearer <session>` | `{ "read": boolean }`; unknown IDs return 404 |
 | `PUT /api/notifications/read-all` | `Bearer <session>` | Optional `source` and `read` filters |
@@ -51,7 +54,7 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 
 Missing or malformed API credentials are rejected with 401 (403 is only returned for policy denials such as closed registration or a wrong old password on a password change). Invalid notification fields and push subscriptions return 400; internal 5xx details are not returned to clients.
 
-Push fan-out is asynchronous: `POST /api/notifications` enqueues the notification and returns immediately; a background in-memory queue delivers it with up to 3 attempts (exponential backoff, five-second timeout per send, ten concurrent sends). Delivery is best-effort: queued items are lost if the pod restarts (single replica, `Recreate` strategy). Push payloads are bounded — the title is truncated at 200 characters and the body at 1000 (with an ellipsis), the `data` object is not pushed, and the notification click opens the app which loads the full record from the API. Expired 404/410 subscriptions are pruned; deliveries that exhaust their retries are logged and counted in the `push.failures` metric.
+Push fan-out is asynchronous: `POST /api/notifications` enqueues the notification and returns immediately; a background in-memory queue delivers it with up to 3 attempts (exponential backoff, five-second timeout per send, ten concurrent sends). Delivery is best-effort: queued items are lost if the pod restarts (single replica, `Recreate` strategy). Push payloads are bounded — the title is truncated at 200 characters and the body at 1000 (with an ellipsis), the `data` object is not pushed, and the notification click opens the deep link `/?notification=<id>`, which fetches the full record, highlights and expands the card and marks the notification read. Expired 404/410 subscriptions are pruned; deliveries that exhaust their retries are logged and counted in the `push.failures` metric.
 
 ## Email notification rules
 

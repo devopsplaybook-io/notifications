@@ -88,7 +88,7 @@ describe("push queue", () => {
     expect(payload.body).toHaveLength(PUSH_PAYLOAD_BODY_MAX);
     expect(payload.body.endsWith("…")).toBe(true);
     expect(payload).not.toHaveProperty("data");
-    expect(payload.url).toBe("/");
+    expect(payload.url).toBe("/?notification=notification-id");
     expect(payload.id).toBe("notification-id");
   });
 

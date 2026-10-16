@@ -194,6 +194,51 @@ describe("notification store", () => {
     expect(store.unreadCount).toBe(0);
   });
 
+  it("fetches a notification for a deep link and prepends it when missing", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { id: "deep", title: "Deep link", read: false },
+    } as any);
+    const store = NotificationsStore();
+    store.notifications = [{ id: "1" }];
+    store.total = 1;
+
+    const notification = await store.ensureNotificationVisible("deep");
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      "/api/notifications/deep",
+      expect.anything(),
+    );
+    expect(notification).toEqual({ id: "deep", title: "Deep link", read: false });
+    expect(store.notifications.map((item) => item.id)).toEqual(["deep", "1"]);
+    expect(store.total).toBe(2);
+  });
+
+  it("does not duplicate a notification that is already visible", async () => {
+    const store = NotificationsStore();
+    store.notifications = [{ id: "1", read: false }];
+    store.total = 1;
+
+    const notification = await store.ensureNotificationVisible("1");
+
+    expect(notification).toEqual({ id: "1", read: false });
+    expect(store.notifications).toHaveLength(1);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(store.total).toBe(1);
+  });
+
+  it("returns null when the single-notification fetch fails", async () => {
+    mockedAxios.get.mockRejectedValueOnce(new Error("request failed"));
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const store = NotificationsStore();
+
+    expect(await store.ensureNotificationVisible("missing")).toBeNull();
+    expect(store.notifications).toEqual([]);
+    expect(store.total).toBe(0);
+    consoleError.mockRestore();
+  });
+
   it("scopes delete-all to the current read and source filters and reflects the reload", async () => {
     mockedAxios.delete.mockResolvedValueOnce({} as any);
     mockedAxios.get
