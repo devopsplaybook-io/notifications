@@ -7,6 +7,8 @@ Centralized notification service for the DevOpsPlaybook.io ecosystem.
 - Fastify API for notification producers and consumers
 - Single-tenant web UI with shared read state and push notifications
 - API tokens for integrations and JWT sessions for the web UI
+- Live feed: the unread badge polls every 60 s and the list refreshes automatically on tab focus/visibility change
+- Search and filtering: case-insensitive text search over title/body, severity filter, source filter with per-source unread counts in the source dropdown
 - Notification cards render the `data` payload as key/value details (URLs become links), show relative timestamps and expose an "Open" action for embedded URLs
 - Deep links (`/?notification=<id>`) highlight, expand and mark the notification read; push taps land on the exact notification
 - Configurable 90-day notification retention
@@ -34,14 +36,14 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 | `GET /api/tokens` | `Bearer <session>` | Returns token names and dates, never token values |
 | `POST /api/tokens` | `Bearer <session>` | `{ "name": string }`; the generated token is returned once |
 | `DELETE /api/tokens/:id` | `Bearer <session>` | Revokes an API token; unknown IDs return 404 |
-| `GET /api/notifications` | session or `Bearer <API token>` | `limit` (1-200, default 50), `offset` (non-negative), `source`, `read` (`all`, `read`, `unread`); returns `{ "notifications": [], "total": number }` |
-| `GET /api/notifications/sources` | session or API token | Returns `{ "sources": string[] }` |
+| `GET /api/notifications` | session or `Bearer <API token>` | `limit` (1-200, default 50), `offset` (non-negative), `source`, `read` (`all`, `read`, `unread`), `severity` (case-insensitive exact match), `q` (case-insensitive substring on title/body, LIKE wildcards escaped); returns `{ "notifications": [], "total": number }` |
+| `GET /api/notifications/sources` | session or API token | Returns `{ "sources": string[], "unreadCounts": { [source]: number } }` (unread counts are global, not affected by filters) |
 | `GET /api/notifications/:id` | session or API token | Returns the notification; unknown IDs return 404 |
 | `POST /api/notifications` | API token | Requires `title`; optional `body`, `source`, `severity`, and object-valued `data`. `data` may also be a JSON-encoded object string. `body` is capped at 10 KB and serialized `data` at 4 KB (both UTF-8); larger payloads return 400. |
 | `PUT /api/notifications/:id/read` | `Bearer <session>` | `{ "read": boolean }`; unknown IDs return 404 |
-| `PUT /api/notifications/read-all` | `Bearer <session>` | Optional `source` and `read` filters |
+| `PUT /api/notifications/read-all` | `Bearer <session>` | Optional `source`, `read`, `severity` and `q` filters |
 | `DELETE /api/notifications/:id` | `Bearer <session>` | Unknown IDs return 404 |
-| `DELETE /api/notifications` | `Bearer <session>` | Deletes notifications matching the optional `source` and `read` filters (no filters = all) |
+| `DELETE /api/notifications` | `Bearer <session>` | Deletes notifications matching the optional `source`, `read`, `severity` and `q` filters (no filters = all) |
 | `GET /api/push/publickey` | none | Returns the Web Push VAPID public key |
 | `POST /api/push/subscribe` | `Bearer <session>` | `{ "subscription": PushSubscriptionJSON }`; endpoint and encryption keys are validated; re-subscribing an endpoint updates it in place |
 | `DELETE /api/push/subscribe` | `Bearer <session>` | `{ "endpoint": "https://..." }`; removes the browser's stored subscription |

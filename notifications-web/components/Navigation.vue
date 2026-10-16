@@ -53,6 +53,7 @@ export default {
   data() {
     return {
       activeRoute: "",
+      unreadPollTimer: null as ReturnType<typeof setInterval> | null,
       authenticationStore: AuthenticationStore(),
       notificationsStore: NotificationsStore(),
     };
@@ -61,6 +62,12 @@ export default {
     this.routeUpdated(this.$route);
     if (await AuthenticationStore().ensureAuthenticated()) {
       NotificationsStore().loadUnreadCount();
+      // Keep the unread badge fresh on every page without manual refresh
+      this.unreadPollTimer = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          NotificationsStore().loadUnreadCount();
+        }
+      }, 60000);
       setTimeout(async () => {
         axios
           .post(
@@ -79,6 +86,12 @@ export default {
     routeUpdated(newRoute: { fullPath: string }) {
       this.activeRoute = newRoute.fullPath.split("/")[1] ?? "";
     },
+  },
+  beforeUnmount() {
+    if (this.unreadPollTimer) {
+      clearInterval(this.unreadPollTimer);
+      this.unreadPollTimer = null;
+    }
   },
 };
 </script>

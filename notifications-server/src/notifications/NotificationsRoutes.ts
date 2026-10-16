@@ -72,6 +72,8 @@ export class NotificationsRoutes {
         offset?: string;
         source?: string;
         read?: string;
+        severity?: string;
+        q?: string;
       };
     }
     fastify.get<GetNotifications>("/", async (req, res) => {
@@ -89,29 +91,39 @@ export class NotificationsRoutes {
         req.query.read === "unread" || req.query.read === "read"
           ? req.query.read
           : "all";
+      const severity = (req.query.severity || "").trim();
+      const q = (req.query.q || "").trim();
       const notifications = await NotificationsDataList(
         OTelRequestSpan(req),
         limit,
         offset,
         source,
         read,
+        severity,
+        q,
       );
       const total = await NotificationsDataCount(
         OTelRequestSpan(req),
         source,
         read,
+        severity,
+        q,
       );
       return res.status(200).send({ notifications, total });
     });
 
-    // List distinct notification sources (requires user session or API token)
+    // List distinct notification sources with per-source unread counts
+    // (requires user session or API token)
     fastify.get("/sources", async (req, res) => {
       const userSession = await AuthGetUserSession(req);
       if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
         return res.status(401).send({ error: "Access Denied" });
       }
-      const sources = await NotificationsDataSources(OTelRequestSpan(req));
-      return res.status(200).send({ sources });
+      const rows = await NotificationsDataSources(OTelRequestSpan(req));
+      return res.status(200).send({
+        sources: rows.map((row) => row.source),
+        unreadCounts: Object.fromEntries(rows.map((row) => [row.source, row.unread])),
+      });
     });
 
     // Create notification via API (requires API token)
@@ -290,6 +302,8 @@ export class NotificationsRoutes {
       Querystring: {
         source?: string;
         read?: string;
+        severity?: string;
+        q?: string;
       };
     }
     fastify.put<PutNotificationsReadAll>("/read-all", async (req, res) => {
@@ -302,10 +316,14 @@ export class NotificationsRoutes {
         req.query.read === "unread" || req.query.read === "read"
           ? req.query.read
           : "all";
+      const severity = (req.query.severity || "").trim();
+      const q = (req.query.q || "").trim();
       const updated = await NotificationsDataUpdateReadAll(
         OTelRequestSpan(req),
         source,
         read,
+        severity,
+        q,
       );
       return res.status(200).send({ success: true, updated });
     });
@@ -315,6 +333,8 @@ export class NotificationsRoutes {
       Querystring: {
         source?: string;
         read?: string;
+        severity?: string;
+        q?: string;
       };
     }
     fastify.delete<DeleteNotificationsAll>("/", async (req, res) => {
@@ -327,10 +347,14 @@ export class NotificationsRoutes {
         req.query.read === "unread" || req.query.read === "read"
           ? req.query.read
           : "all";
+      const severity = (req.query.severity || "").trim();
+      const q = (req.query.q || "").trim();
       const count = await NotificationsDataDeleteAll(
         OTelRequestSpan(req),
         source,
         read,
+        severity,
+        q,
       );
       return res.status(200).send({ success: true, deleted: count });
     });
