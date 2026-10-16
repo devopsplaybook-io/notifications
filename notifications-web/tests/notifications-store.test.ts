@@ -263,4 +263,87 @@ describe("notification store", () => {
     expect(store.total).toBe(1);
     expect(store.unreadCount).toBe(1);
   });
+
+  it("includes the severity and search filters in the list URL and omits them when empty", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: { notifications: [{ id: "1" }], total: 1 },
+      } as any)
+      .mockResolvedValueOnce({ data: { total: 0 } } as any)
+      .mockResolvedValueOnce({
+        data: { notifications: [], total: 0 },
+      } as any)
+      .mockResolvedValueOnce({ data: { total: 0 } } as any)
+      .mockResolvedValueOnce({
+        data: { notifications: [], total: 0 },
+      } as any)
+      .mockResolvedValueOnce({ data: { total: 0 } } as any);
+
+    const store = NotificationsStore();
+    await store.loadNotifications();
+    expect(mockedAxios.get.mock.calls[0]![0]).not.toContain("severity=");
+    expect(mockedAxios.get.mock.calls[0]![0]).not.toContain("q=");
+
+    await store.setSeverityFilter("error");
+    expect(mockedAxios.get.mock.calls[2]![0]).toContain("severity=error");
+    expect(mockedAxios.get.mock.calls[2]![0]).not.toContain("q=");
+
+    await store.setSearchQuery("  100%  ");
+    expect(store.searchQuery).toBe("100%");
+    expect(mockedAxios.get.mock.calls[4]![0]).toContain(
+      "severity=error&q=100%25",
+    );
+  });
+
+  it("populates sources and per-source unread counts", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        sources: ["build", "deploy"],
+        unreadCounts: { build: 3, deploy: 0 },
+      },
+    } as any);
+    const store = NotificationsStore();
+
+    await store.loadSources();
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      "/api/notifications/sources",
+      expect.anything(),
+    );
+    expect(store.sources).toEqual(["build", "deploy"]);
+    expect(store.sourceUnreadCounts).toEqual({ build: 3, deploy: 0 });
+  });
+
+  it("scopes mark-all-read and delete-all to the severity and search filters", async () => {
+    mockedAxios.put.mockResolvedValueOnce({ data: { updated: 0 } } as any);
+    mockedAxios.get.mockResolvedValueOnce({ data: { total: 0 } } as any);
+    const store = NotificationsStore();
+    store.readFilter = "all";
+    store.severityFilter = "error";
+    store.searchQuery = "disk";
+
+    await store.markAllRead();
+
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      "/api/notifications/read-all?read=all&severity=error&q=disk",
+      {},
+      expect.anything(),
+    );
+
+    setActivePinia(createPinia());
+    const deleteStore = NotificationsStore();
+    deleteStore.readFilter = "all";
+    deleteStore.severityFilter = "warning";
+    mockedAxios.delete.mockResolvedValueOnce({} as any);
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { notifications: [], total: 0 } } as any)
+      .mockResolvedValueOnce({ data: { total: 0 } } as any);
+
+    await deleteStore.deleteAll();
+
+    expect(mockedAxios.delete).toHaveBeenCalledWith(
+      "/api/notifications?read=all&severity=warning",
+      expect.anything(),
+    );
+  });
 });

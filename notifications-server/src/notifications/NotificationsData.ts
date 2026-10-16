@@ -13,6 +13,46 @@ const logger = OTelLogger().createModuleLogger(path.basename(__filename));
 /** Read-state filter: "all" (default), "unread" or "read". */
 export type NotificationReadFilter = "all" | "unread" | "read";
 
+/** WHERE conditions and parameters shared by the list/count/bulk queries. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface NotificationFilters {
+  conditions: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  params: any[];
+}
+
+function buildNotificationFilters(
+  source: string,
+  read: NotificationReadFilter,
+  severity: string,
+  q: string,
+): NotificationFilters {
+  const conditions: string[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const params: any[] = [];
+  if (source) {
+    conditions.push("source = ?");
+    params.push(source);
+  }
+  // "read"/"NOT read" work on both SQLite (0/1) and Postgres (BOOLEAN)
+  if (read === "unread") {
+    conditions.push("NOT read");
+  } else if (read === "read") {
+    conditions.push("read");
+  }
+  if (severity) {
+    conditions.push("LOWER(severity) = LOWER(?)");
+    params.push(severity);
+  }
+  if (q) {
+    // Escape LIKE wildcards so terms like "100%" match literally
+    const escaped = q.toLowerCase().replace(/[\\%_]/g, (c) => "\\" + c);
+    conditions.push("(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(body) LIKE ? ESCAPE '\\')");
+    params.push(`%${escaped}%`, `%${escaped}%`);
+  }
+  return { conditions, params };
+}
+
 /** Map a DB row to a Notification with a normalized boolean read field. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeRead(row: any): Notification {
@@ -25,22 +65,17 @@ export async function NotificationsDataList(
   offset = 0,
   source = "",
   read: NotificationReadFilter = "all",
+  severity = "",
+  q = "",
 ): Promise<Notification[]> {
   const span = OTelTracer().startSpan("NotificationsDataList", context);
   try {
-    const conditions: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const params: any[] = [];
-    if (source) {
-      conditions.push("source = ?");
-      params.push(source);
-    }
-    // "read"/"NOT read" work on both SQLite (0/1) and Postgres (BOOLEAN)
-    if (read === "unread") {
-      conditions.push("NOT read");
-    } else if (read === "read") {
-      conditions.push("read");
-    }
+    const { conditions, params } = buildNotificationFilters(
+      source,
+      read,
+      severity,
+      q,
+    );
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     params.push(limit, offset);
     const result = await DbUtilsQuerySQL(
@@ -56,14 +91,18 @@ export async function NotificationsDataList(
 
 export async function NotificationsDataSources(
   context: Span,
-): Promise<string[]> {
+): Promise<Array<{ source: string; unread: number }>> {
   const span = OTelTracer().startSpan("NotificationsDataSources", context);
   try {
     const result = await DbUtilsQuerySQL(
       span,
-      "SELECT DISTINCT source FROM notifications ORDER BY source ASC",
+      'SELECT source, SUM(CASE WHEN NOT read THEN 1 ELSE 0 END) AS unread FROM notifications GROUP BY source ORDER BY source ASC',
     );
-    return result.map((row) => row.source);
+    // SUM may come back as a string from Postgres
+    return result.map((row) => ({
+      source: row.source,
+      unread: Number(row.unread),
+    }));
   } finally {
     span.end();
   }
@@ -119,21 +158,17 @@ export async function NotificationsDataCount(
   context: Span,
   source = "",
   read: NotificationReadFilter = "all",
+  severity = "",
+  q = "",
 ): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataCount", context);
   try {
-    const conditions: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const params: any[] = [];
-    if (source) {
-      conditions.push("source = ?");
-      params.push(source);
-    }
-    if (read === "unread") {
-      conditions.push("NOT read");
-    } else if (read === "read") {
-      conditions.push("read");
-    }
+    const { conditions, params } = buildNotificationFilters(
+      source,
+      read,
+      severity,
+      q,
+    );
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const result = await DbUtilsQuerySQL(
       span,
@@ -169,22 +204,17 @@ export async function NotificationsDataUpdateReadAll(
   context: Span,
   source = "",
   read: NotificationReadFilter = "all",
+  severity = "",
+  q = "",
 ): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataUpdateReadAll", context);
   try {
-    const conditions: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const params: any[] = [];
-    if (source) {
-      conditions.push("source = ?");
-      params.push(source);
-    }
-    // "read"/"NOT read" work on both SQLite (0/1) and Postgres (BOOLEAN)
-    if (read === "unread") {
-      conditions.push("NOT read");
-    } else if (read === "read") {
-      conditions.push("read");
-    }
+    const { conditions, params } = buildNotificationFilters(
+      source,
+      read,
+      severity,
+      q,
+    );
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const changes = await DbUtilsExecSQL(
       span,
@@ -220,22 +250,17 @@ export async function NotificationsDataDeleteAll(
   context: Span,
   source = "",
   read: NotificationReadFilter = "all",
+  severity = "",
+  q = "",
 ): Promise<number> {
   const span = OTelTracer().startSpan("NotificationsDataDeleteAll", context);
   try {
-    const conditions: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const params: any[] = [];
-    if (source) {
-      conditions.push("source = ?");
-      params.push(source);
-    }
-    // "read"/"NOT read" work on both SQLite (0/1) and Postgres (BOOLEAN)
-    if (read === "unread") {
-      conditions.push("NOT read");
-    } else if (read === "read") {
-      conditions.push("read");
-    }
+    const { conditions, params } = buildNotificationFilters(
+      source,
+      read,
+      severity,
+      q,
+    );
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const deleted = await DbUtilsExecSQL(
       span,
@@ -243,7 +268,7 @@ export async function NotificationsDataDeleteAll(
       params,
     );
     logger.info(
-      `Deleted ${deleted} notification(s) (source: ${source || "all"}, read: ${read})`,
+      `Deleted ${deleted} notification(s) (source: ${source || "all"}, read: ${read}, severity: ${severity || "all"}, q: ${q || "none"})`,
       span,
     );
     return deleted;

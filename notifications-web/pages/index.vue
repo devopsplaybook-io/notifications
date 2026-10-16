@@ -35,8 +35,33 @@
               :key="source"
               :value="source"
             >
-              {{ source }}
+              {{ source
+              }}{{
+                notificationsStore.sourceUnreadCounts[source]
+                  ? ` (${notificationsStore.sourceUnreadCounts[source]})`
+                  : ""
+              }}
             </option>
+          </select>
+          <input
+            type="search"
+            class="search-filter"
+            aria-label="Search notifications"
+            placeholder="Search title or body…"
+            :value="notificationsStore.searchQuery"
+            @input="onSearchInput"
+          />
+          <select
+            :value="notificationsStore.severityFilter"
+            class="severity-filter"
+            aria-label="Filter by severity"
+            @change="onSeverityFilterChange"
+          >
+            <option value="">All severities</option>
+            <option value="info">info</option>
+            <option value="success">success</option>
+            <option value="warning">warning</option>
+            <option value="error">error</option>
           </select>
         </div>
         <button
@@ -223,6 +248,8 @@ const pushSubscribed = ref(false);
 const pushPermission = ref("denied");
 const pushBusy = ref(false);
 const pushError = ref("");
+const searchDebounceTimer = ref(null);
+let unreadPollTimer = null;
 
 const pushHint = computed(() => {
   if (!pushSupported.value || pushSubscribed.value) {
@@ -244,9 +271,16 @@ const emptyMessage = computed(() => {
   if (notificationsStore.readFilter === "read") {
     return "No read notifications.";
   }
-  return notificationsStore.sourceFilter
-    ? "No notifications for this source."
-    : "No notifications yet.";
+  if (notificationsStore.sourceFilter) {
+    return "No notifications for this source.";
+  }
+  if (notificationsStore.searchQuery) {
+    return "No notifications match your search.";
+  }
+  if (notificationsStore.severityFilter) {
+    return "No notifications with this severity.";
+  }
+  return "No notifications yet.";
 });
 
 function severityIcon(severity) {
@@ -307,6 +341,17 @@ function onReadFilterChange(event) {
   notificationsStore.setReadFilter(event.target.value);
 }
 
+function onSeverityFilterChange(event) {
+  notificationsStore.setSeverityFilter(event.target.value);
+}
+
+function onSearchInput(event) {
+  clearTimeout(searchDebounceTimer.value);
+  searchDebounceTimer.value = setTimeout(() => {
+    notificationsStore.setSearchQuery(event.target.value);
+  }, 300);
+}
+
 function toggleRead(n) {
   notificationsStore.markRead(n.id, !n.read);
 }
@@ -327,6 +372,32 @@ async function refreshNotifications() {
     notificationsStore.loadSources(),
     notificationsStore.loadNotifications(),
   ]);
+}
+
+async function refreshOnWake() {
+  if (authenticationStore.isAuthenticated && notificationsStore.loaded) {
+    await refreshNotifications();
+  }
+}
+
+async function onPollTick() {
+  if (
+    !authenticationStore.isAuthenticated ||
+    document.visibilityState !== "visible"
+  ) {
+    return;
+  }
+  const unreadBefore = notificationsStore.unreadCount;
+  await notificationsStore.loadUnreadCount();
+  if (notificationsStore.loaded && notificationsStore.unreadCount !== unreadBefore) {
+    await refreshNotifications();
+  }
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    refreshOnWake();
+  }
 }
 
 async function deleteNotification(id) {
@@ -360,13 +431,26 @@ async function togglePush() {
 }
 
 onMounted(async () => {
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("focus", refreshOnWake);
   if (await authenticationStore.ensureAuthenticated()) {
     await refreshNotifications();
     await handleDeepLink();
+    unreadPollTimer = setInterval(onPollTick, 60000);
     pushSupported.value = await PushService.isSupported();
     pushSubscribed.value = await PushService.isSubscribed();
     pushPermission.value = await PushService.getPermission();
   }
+});
+
+onUnmounted(() => {
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+  window.removeEventListener("focus", refreshOnWake);
+  if (unreadPollTimer) {
+    clearInterval(unreadPollTimer);
+    unreadPollTimer = null;
+  }
+  clearTimeout(searchDebounceTimer.value);
 });
 </script>
 
@@ -424,6 +508,15 @@ onMounted(async () => {
 }
 
 .page-actions select {
+  font-size: var(--font-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page-actions input[type="search"] {
   font-size: var(--font-sm);
   padding: var(--space-xs) var(--space-sm);
   margin: 0;

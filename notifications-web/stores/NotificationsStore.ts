@@ -8,8 +8,11 @@ export const NotificationsStore = defineStore("NotificationsStore", {
     notifications: [] as any[],
     total: 0,
     sources: [] as string[],
+    sourceUnreadCounts: {} as Record<string, number>,
     sourceFilter: "",
     readFilter: "unread",
+    severityFilter: "",
+    searchQuery: "",
     loading: false,
     loaded: false,
     unreadCount: 0,
@@ -29,6 +32,12 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         let url = `${(await Config.get()).SERVER_URL}/notifications?limit=50&offset=${offset}&read=${this.readFilter}`;
         if (this.sourceFilter) {
           url += `&source=${encodeURIComponent(this.sourceFilter)}`;
+        }
+        if (this.severityFilter) {
+          url += `&severity=${encodeURIComponent(this.severityFilter)}`;
+        }
+        if (this.searchQuery) {
+          url += `&q=${encodeURIComponent(this.searchQuery)}`;
         }
         const res = await axios.get(url, headers);
         if (requestId !== this.requestId) return;
@@ -76,6 +85,7 @@ export const NotificationsStore = defineStore("NotificationsStore", {
           headers,
         );
         this.sources = res.data.sources;
+        this.sourceUnreadCounts = res.data.unreadCounts ?? {};
       } catch (err) {
         console.error("Failed to load notification sources", err);
       }
@@ -119,6 +129,16 @@ export const NotificationsStore = defineStore("NotificationsStore", {
       await this.loadNotifications();
     },
 
+    async setSeverityFilter(severity: string): Promise<void> {
+      this.severityFilter = severity;
+      await this.loadNotifications();
+    },
+
+    async setSearchQuery(query: string): Promise<void> {
+      this.searchQuery = query.trim();
+      await this.loadNotifications();
+    },
+
     async markRead(id: string, read: boolean): Promise<void> {
       try {
         const headers = await AuthService.getAuthHeader();
@@ -143,6 +163,12 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         let url = `${(await Config.get()).SERVER_URL}/notifications/read-all?read=${this.readFilter}`;
         if (this.sourceFilter) {
           url += `&source=${encodeURIComponent(this.sourceFilter)}`;
+        }
+        if (this.severityFilter) {
+          url += `&severity=${encodeURIComponent(this.severityFilter)}`;
+        }
+        if (this.searchQuery) {
+          url += `&q=${encodeURIComponent(this.searchQuery)}`;
         }
         const res = await axios.put(url, {}, headers);
         this.notifications.forEach((notification) => {
@@ -177,6 +203,12 @@ export const NotificationsStore = defineStore("NotificationsStore", {
         let url = `${(await Config.get()).SERVER_URL}/notifications?read=${this.readFilter}`;
         if (this.sourceFilter) {
           url += `&source=${encodeURIComponent(this.sourceFilter)}`;
+        }
+        if (this.severityFilter) {
+          url += `&severity=${encodeURIComponent(this.severityFilter)}`;
+        }
+        if (this.searchQuery) {
+          url += `&q=${encodeURIComponent(this.searchQuery)}`;
         }
         await axios.delete(url, headers);
         await this.loadNotifications();

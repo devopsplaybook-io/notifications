@@ -107,6 +107,15 @@ describe("notification routes", () => {
       0,
       "",
       "all",
+      "",
+      "",
+    );
+    expect(notificationsData.NotificationsDataCount).toHaveBeenCalledWith(
+      undefined,
+      "",
+      "all",
+      "",
+      "",
     );
   });
 
@@ -123,6 +132,33 @@ describe("notification routes", () => {
       17,
       "",
       "all",
+      "",
+      "",
+    );
+  });
+
+  test("passes the severity and search filters to the list and count queries", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/notifications?q=deploy&severity=error",
+      headers: { authorization: "Bearer api-token" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(notificationsData.NotificationsDataList).toHaveBeenCalledWith(
+      undefined,
+      50,
+      0,
+      "",
+      "all",
+      "error",
+      "deploy",
+    );
+    expect(notificationsData.NotificationsDataCount).toHaveBeenCalledWith(
+      undefined,
+      "",
+      "all",
+      "error",
+      "deploy",
     );
   });
 
@@ -205,18 +241,25 @@ describe("notification routes", () => {
     expect(JSON.parse(response.body).error).toContain("not found");
   });
 
-  test("still serves /sources now that a /:id route is registered", async () => {
+  test("still serves /sources now that a /:id route is registered, with unread counts", async () => {
     AuthGetUserSession.mockResolvedValueOnce({
       isAuthenticated: true,
       userId: "session-user",
     });
+    notificationsData.NotificationsDataSources.mockResolvedValueOnce([
+      { source: "build", unread: 3 },
+      { source: "deploy", unread: 0 },
+    ]);
     const response = await app.inject({
       method: "GET",
       url: "/notifications/sources",
       headers: { authorization: "Bearer session" },
     });
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ sources: [] });
+    expect(JSON.parse(response.body)).toEqual({
+      sources: ["build", "deploy"],
+      unreadCounts: { build: 3, deploy: 0 },
+    });
   });
 
   test("rejects invalid notification data and reports missing deletes", async () => {
@@ -353,6 +396,8 @@ describe("notification routes", () => {
       undefined,
       "build",
       "unread",
+      "",
+      "",
     );
   });
 
@@ -371,6 +416,46 @@ describe("notification routes", () => {
       undefined,
       "",
       "all",
+      "",
+      "",
+    );
+  });
+
+  test("scopes read-all and delete-all to the severity and search filters", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const readAll = await app.inject({
+      method: "PUT",
+      url: "/notifications/read-all?severity=error&q=deploy",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(readAll.statusCode).toBe(200);
+    expect(notificationsData.NotificationsDataUpdateReadAll).toHaveBeenCalledWith(
+      undefined,
+      "",
+      "all",
+      "error",
+      "deploy",
+    );
+
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const deleteAll = await app.inject({
+      method: "DELETE",
+      url: "/notifications?severity=warning&q=100%25",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(deleteAll.statusCode).toBe(200);
+    expect(notificationsData.NotificationsDataDeleteAll).toHaveBeenCalledWith(
+      undefined,
+      "",
+      "all",
+      "warning",
+      "100%",
     );
   });
 
