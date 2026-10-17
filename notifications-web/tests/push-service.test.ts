@@ -128,16 +128,112 @@ describe("push service preference lifecycle", () => {
 
   it("re-registers an existing browser subscription without prompting", async () => {
     PreferencesService.setPushEnabled(true);
-    fetchMock.mockResolvedValueOnce({ ok: true });
+    const endpointHash = await PushService.getEndpointHash(
+      subscription.endpoint,
+    );
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          subscriptions: [{ id: "sub-1", endpointHash }],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true });
 
     await PushService.syncIfEnabled();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const saveCall = fetchMock.mock.calls[0]!;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const listCall = fetchMock.mock.calls[0]!;
+    expect(listCall[0]).toBe("/api/push/subscriptions");
+    expect(listCall[1].method).toBeUndefined();
+    const saveCall = fetchMock.mock.calls[1]!;
     expect(saveCall[0]).toBe("/api/push/subscribe");
     expect(saveCall[1].method).toBe("POST");
     expect(requestPermission).not.toHaveBeenCalled();
     expect(PreferencesService.isPushEnabled()).toBe(true);
+  });
+
+  it("stops syncing and clears the preference when the device was revoked remotely", async () => {
+    PreferencesService.setPushEnabled(true);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        subscriptions: [
+          { id: "sub-other", endpointHash: "ffffffffffffffff" },
+        ],
+      }),
+    });
+
+    await PushService.syncIfEnabled();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(PreferencesService.isPushEnabled()).toBe(false);
+  });
+
+  it("lists the session's push subscriptions", async () => {
+    const entries = [
+      {
+        id: "sub-1",
+        endpointOrigin: "https://push.example",
+        userAgent: "agent/1.0",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        endpointHash: "0123456789abcdef",
+      },
+    ];
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ subscriptions: entries }),
+    });
+
+    await expect(PushService.listSubscriptions()).resolves.toEqual(entries);
+
+    const listCall = fetchMock.mock.calls[0]!;
+    expect(listCall[0]).toBe("/api/push/subscriptions");
+    expect(listCall[1].headers.Authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it("returns an empty list without a session token", async () => {
+    localStorage.removeItem("auth_token");
+
+    await expect(PushService.listSubscriptions()).resolves.toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty list when the server rejects the request", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false });
+
+    await expect(PushService.listSubscriptions()).resolves.toEqual([]);
+  });
+
+  it("revokes a subscription by id", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true });
+
+    await expect(PushService.revokeSubscription("sub-1")).resolves.toBe(true);
+
+    const revokeCall = fetchMock.mock.calls[0]!;
+    expect(revokeCall[0]).toBe("/api/push/subscriptions/sub-1");
+    expect(revokeCall[1].method).toBe("DELETE");
+    expect(revokeCall[1].headers.Authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it("reports a failed revocation as false", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404 });
+
+    await expect(PushService.revokeSubscription("missing")).resolves.toBe(false);
+  });
+
+  it("computes a deterministic 16-hex endpoint hash", async () => {
+    const first = await PushService.getEndpointHash(
+      "https://push.example/endpoint",
+    );
+    const second = await PushService.getEndpointHash(
+      "https://push.example/endpoint",
+    );
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[0-9a-f]{16}$/);
+    expect(await PushService.getEndpointHash("https://other.example/x")).not.toBe(
+      first,
+    );
   });
 
   it("stays quiet when the browser has no subscription to re-register", async () => {

@@ -1,6 +1,14 @@
 import Config from "./Config";
 import { PreferencesService } from "./PreferencesService";
 
+export interface PushSubscriptionInfo {
+  id: string;
+  endpointOrigin: string;
+  userAgent: string;
+  createdAt: string;
+  endpointHash: string;
+}
+
 export class PushService {
   public static async isSupported(): Promise<boolean> {
     return (
@@ -83,8 +91,10 @@ export class PushService {
 
   /**
    * Re-register an existing browser subscription after load when the user has
-   * previously enabled push (e.g. server-side data was lost or the session was
-   * recreated). Never prompts and never creates a browser subscription.
+   * previously enabled push (e.g. the session was recreated). Never prompts
+   * and never creates a browser subscription. A subscription revoked remotely
+   * (Settings → Devices) is not resurrected: the local preference is cleared
+   * instead, so push must be re-enabled manually.
    */
   public static async syncIfEnabled(): Promise<void> {
     if (!PreferencesService.isPushEnabled()) {
@@ -101,6 +111,17 @@ export class PushService {
       const subscription = await registration?.pushManager.getSubscription();
       if (!subscription) {
         return;
+      }
+      const endpointHash = await PushService.getEndpointHash(
+        subscription.endpoint,
+      );
+      if (endpointHash) {
+        const known = await PushService.listSubscriptions();
+        if (!known.some((entry) => entry.endpointHash === endpointHash)) {
+          console.info("Push subscription was revoked remotely");
+          PreferencesService.setPushEnabled(false);
+          return;
+        }
       }
       await PushService.saveSubscription(subscription);
     } catch (error) {
@@ -129,6 +150,63 @@ export class PushService {
       console.error("Push unsubscription failed:", error);
       return false;
     }
+  }
+
+  /** List the push devices of the current session (origin/UA/date only). */
+  public static async listSubscriptions(): Promise<PushSubscriptionInfo[]> {
+    const config = await Config.get();
+    const token = localStorage.getItem("auth_token");
+    if (!token) {
+      console.error("No auth token for push subscription list");
+      return [];
+    }
+    const response = await fetch(`${config.SERVER_URL}/push/subscriptions`, {
+      headers: { Authorization: ["Bearer", token].join(" ") },
+    });
+    if (!response.ok) {
+      console.error("Failed to list push subscriptions");
+      return [];
+    }
+    const body = await response.json();
+    return Array.isArray(body?.subscriptions) ? body.subscriptions : [];
+  }
+
+  /** Revoke a push device by id (e.g. a lost browser). */
+  public static async revokeSubscription(id: string): Promise<boolean> {
+    const config = await Config.get();
+    const token = localStorage.getItem("auth_token");
+    if (!token) {
+      console.error("No auth token for push revocation");
+      return false;
+    }
+    const response = await fetch(
+      `${config.SERVER_URL}/push/subscriptions/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: ["Bearer", token].join(" ") },
+      },
+    );
+    if (!response.ok) {
+      console.error("Failed to revoke push subscription");
+      return false;
+    }
+    return true;
+  }
+
+  /** SHA-256 prefix of the endpoint, matching the server-side hash; "" when
+   * Web Crypto is unavailable (e.g. non-secure context). */
+  public static async getEndpointHash(endpoint: string): Promise<string> {
+    if (typeof crypto === "undefined" || !crypto.subtle) {
+      return "";
+    }
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(endpoint),
+    );
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, 16);
   }
 
   private static async saveSubscription(

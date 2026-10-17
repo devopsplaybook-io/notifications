@@ -8,6 +8,8 @@ Centralized notification service for the DevOpsPlaybook.io ecosystem.
 - Single-tenant web UI with shared read state and push notifications
 - API tokens for integrations and JWT sessions for the web UI
 - Live feed: the unread badge polls every 60 s and the list refreshes automatically on tab focus/visibility change
+- Frictionless sign-in: unauthenticated visitors get the login form directly on `/` and return to the notifications after signing in; the browser tab title shows the unread count (e.g. `(3) Notifications`)
+- Push device management: Settings → Devices lists every subscribed browser (origin, user agent, subscribe date) with per-device revoke so a lost browser can be cut off remotely
 - Search and filtering: case-insensitive text search over title/body, severity filter, source filter with per-source unread counts in the source dropdown
 - Notification cards render the `data` payload as key/value details (URLs become links), show relative timestamps and expose an "Open" action for embedded URLs
 - Deep links (`/?notification=<id>`) highlight, expand and mark the notification read; push taps land on the exact notification
@@ -45,8 +47,10 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 | `DELETE /api/notifications/:id` | `Bearer <session>` | Unknown IDs return 404 |
 | `DELETE /api/notifications` | `Bearer <session>` | Deletes notifications matching the optional `source`, `read`, `severity` and `q` filters (no filters = all) |
 | `GET /api/push/publickey` | none | Returns the Web Push VAPID public key |
-| `POST /api/push/subscribe` | `Bearer <session>` | `{ "subscription": PushSubscriptionJSON }`; endpoint and encryption keys are validated; re-subscribing an endpoint updates it in place |
+| `POST /api/push/subscribe` | `Bearer <session>` | `{ "subscription": PushSubscriptionJSON }`; endpoint and encryption keys are validated; re-subscribing an endpoint updates it in place and refreshes the stored user agent while keeping the original subscribe date |
 | `DELETE /api/push/subscribe` | `Bearer <session>` | `{ "endpoint": "https://..." }`; removes the browser's stored subscription |
+| `GET /api/push/subscriptions` | `Bearer <session>` | Returns `{ "subscriptions": [] }`; each entry is `{ "id", "endpointOrigin", "userAgent", "createdAt", "endpointHash" }` of the session user's devices (the full endpoint, which contains capability tokens, is never returned) |
+| `DELETE /api/push/subscriptions/:id` | `Bearer <session>` | Revokes a push device by id; unknown or not-owned IDs return 404 |
 | `GET /api/emails/rules` | `Bearer <session>` | Returns `{ "rules": [] }`; each rule is `{ "id", "source", "severity", "recipient", "createdAt" }` |
 | `POST /api/emails/rules` | `Bearer <session>` | `{ "recipient": string }`; optional `source` and `severity` (empty or omitted = wildcard). Returns the created rule |
 | `PUT /api/emails/rules/:id` | `Bearer <session>` | Same payload as creation; unknown IDs return 404 |
@@ -80,7 +84,7 @@ Rules, the SMTP status and a "send test email" action are managed in the web UI 
 
 ## Single-tenant setup and security
 
-Create the initial account once through Settings → Profile (`/users` and `/tokens` redirect to their new Settings locations); account creation closes after the first user is stored. The web UI navigation has a Notifications entry and a single Settings entry with Profile (account, change password, theme), API Keys and Email tabs. Notifications and read state are deployment-wide, not user-specific. All sessions share notification visibility, read state, delete permissions and API-token management. Do not expose additional accounts as isolated users; this deployment intentionally has a single administrator-equivalent account.
+Create the initial account once through Settings → Profile (`/users` and `/tokens` redirect to their new Settings locations); account creation closes after the first user is stored. The web UI navigation has a Notifications entry and a single Settings entry with Profile (account, change password, theme), Devices (push subscription management), API Keys and Email tabs. Notifications and read state are deployment-wide, not user-specific. All sessions share notification visibility, read state, delete permissions and API-token management. Do not expose additional accounts as isolated users; this deployment intentionally has a single administrator-equivalent account.
 
 Configure `JWT_KEY` with at least 32 characters. The service fails at startup if it is missing or weak. The key is read from the environment only and is never stored in the database (migration `init-0005` purges the legacy `metadata.auth_token` copy). Rotating `JWT_KEY` and restarting the service invalidates all existing sessions; clients simply log in again. Browser CORS is restricted to `https://notifications.didierhoarau.cloud`; API-token clients that do not use browsers are unaffected. Login and registration are throttled by client IP and username; token refreshes with a valid session are exempt. Sessions are bound to a per-user `tokenVersion`: changing the password or calling `/api/users/logout` revokes all of the user's sessions (tokens issued before this migration carry no version claim and count as version 0, so existing sessions stay valid until revoked). Security response headers are applied by the API, including a Content-Security-Policy that allows only same-origin resources plus the inline scripts and styles required by the static Nuxt build.
 
