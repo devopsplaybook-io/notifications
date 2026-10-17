@@ -7,7 +7,10 @@ import {
   EmailRulesCreate,
   EmailRulesUpdate,
   EmailRulesDelete,
+  SEVERITY_MODE_EXACT,
+  SEVERITY_MODE_THRESHOLD,
 } from "./EmailRulesData";
+import { EmailDeliveriesList } from "./EmailDeliveriesData";
 import { EmailIsConfigured, EmailSendTest } from "./EmailService";
 
 const RECIPIENT_MAX_LENGTH = 320;
@@ -55,13 +58,32 @@ export function NormalizeRuleSeverity(value: unknown): string | undefined {
   return value.trim();
 }
 
+/**
+ * 'exact' keeps the pre-threshold behavior (default); 'threshold' matches the
+ * rule severity and everything above it in the escalation order.
+ */
+export function NormalizeRuleSeverityMode(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return SEVERITY_MODE_EXACT;
+  }
+  if (
+    value === SEVERITY_MODE_EXACT ||
+    value === SEVERITY_MODE_THRESHOLD
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
 function RulePayloadFrom(body: {
   source?: unknown;
   severity?: unknown;
-}): { source?: string; severity?: string } {
+  severityMode?: unknown;
+}): { source?: string; severity?: string; severityMode?: string } {
   return {
     source: NormalizeRuleSource(body?.source),
     severity: NormalizeRuleSeverity(body?.severity),
+    severityMode: NormalizeRuleSeverityMode(body?.severityMode),
   };
 }
 
@@ -82,6 +104,7 @@ export class EmailRulesRoutes {
       Body: {
         source?: unknown;
         severity?: unknown;
+        severityMode?: unknown;
         recipient?: unknown;
       };
     }
@@ -90,12 +113,15 @@ export class EmailRulesRoutes {
       if (!userSession.isAuthenticated) {
         return res.status(401).send({ error: "Access Denied" });
       }
-      const { source, severity } = RulePayloadFrom(req.body ?? {});
+      const { source, severity, severityMode } = RulePayloadFrom(req.body ?? {});
       if (source === undefined) {
         return res.status(400).send({ error: "Invalid: source" });
       }
       if (severity === undefined) {
         return res.status(400).send({ error: "Invalid: severity" });
+      }
+      if (severityMode === undefined) {
+        return res.status(400).send({ error: "Invalid: severityMode" });
       }
       if (!IsValidEmailRecipient(req.body?.recipient)) {
         return res.status(400).send({ error: "Invalid: recipient" });
@@ -105,6 +131,7 @@ export class EmailRulesRoutes {
         source,
         severity,
         req.body.recipient,
+        severityMode,
       );
       return res.status(201).send(rule);
     });
@@ -117,6 +144,7 @@ export class EmailRulesRoutes {
       Body: {
         source?: unknown;
         severity?: unknown;
+        severityMode?: unknown;
         recipient?: unknown;
       };
     }
@@ -129,12 +157,15 @@ export class EmailRulesRoutes {
       if (!existing) {
         return res.status(404).send({ error: "Email rule not found" });
       }
-      const { source, severity } = RulePayloadFrom(req.body ?? {});
+      const { source, severity, severityMode } = RulePayloadFrom(req.body ?? {});
       if (source === undefined) {
         return res.status(400).send({ error: "Invalid: source" });
       }
       if (severity === undefined) {
         return res.status(400).send({ error: "Invalid: severity" });
+      }
+      if (severityMode === undefined) {
+        return res.status(400).send({ error: "Invalid: severityMode" });
       }
       if (!IsValidEmailRecipient(req.body?.recipient)) {
         return res.status(400).send({ error: "Invalid: recipient" });
@@ -145,11 +176,22 @@ export class EmailRulesRoutes {
         source,
         severity,
         req.body.recipient,
+        severityMode,
       );
       if (!updated) {
         return res.status(404).send({ error: "Email rule not found" });
       }
       return res.status(200).send({ success: true });
+    });
+
+    // Recent email delivery outcomes (requires user auth)
+    fastify.get("/deliveries", async (req, res) => {
+      const userSession = await AuthGetUserSession(req);
+      if (!userSession.isAuthenticated) {
+        return res.status(401).send({ error: "Access Denied" });
+      }
+      const deliveries = await EmailDeliveriesList(OTelRequestSpan(req));
+      return res.status(200).send({ deliveries });
     });
 
     // Delete an email rule (requires user auth)

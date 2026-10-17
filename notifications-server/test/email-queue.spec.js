@@ -3,6 +3,9 @@ const mockSendMail = jest.fn();
 jest.mock("nodemailer", () => ({
   createTransport: jest.fn(),
 }));
+jest.mock("../dist/emails/EmailDeliveriesData", () => ({
+  EmailDeliveriesRecord: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock("../dist/OTelContext", () => ({
   OTelTracer: () => ({ startSpan: () => ({ end: jest.fn() }) }),
   OTelLogger: () => ({
@@ -18,6 +21,7 @@ jest.mock("../dist/OTelContext", () => ({
 }));
 
 const nodemailer = require("nodemailer");
+const { EmailDeliveriesRecord } = require("../dist/emails/EmailDeliveriesData");
 const {
   BuildEmailMessage,
   CreateTransportFromConfig,
@@ -49,6 +53,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   Object.assign(EmailQueueSettings, DEFAULT_SETTINGS);
   mockSendMail.mockResolvedValue(undefined);
+  EmailDeliveriesRecord.mockResolvedValue(undefined);
 });
 
 afterEach(async () => {
@@ -254,6 +259,94 @@ describe("email queue", () => {
     }
     await EmailQueueWaitForIdle();
     expect(mockSendMail).toHaveBeenCalledTimes(jobCount);
+  });
+});
+
+describe("email delivery outcomes", () => {
+  test("records a sent outcome with the successful attempt number", async () => {
+    EmailQueueSetTransport({ sendMail: mockSendMail }, "noreply@example.com", "");
+    mockSendMail
+      .mockRejectedValueOnce(new Error("smtp down"))
+      .mockRejectedValueOnce(new Error("smtp down"))
+      .mockResolvedValueOnce(undefined);
+    EmailQueueSettings.retryBaseDelayMs = 1;
+    EmailQueueEnqueue({ notification: notification(), recipient: "user@example.com" });
+    await EmailQueueWaitForIdle();
+
+    expect(EmailDeliveriesRecord).toHaveBeenCalledTimes(1);
+    expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({
+        recipient: "user@example.com",
+        notificationId: "notification-id",
+        notificationTitle: "Build",
+        source: "ci",
+        severity: "success",
+        status: "sent",
+        attempts: 3,
+        error: "",
+      }),
+    );
+  });
+
+  test("records a failed outcome with the last error after exhausting retries", async () => {
+    EmailQueueSetTransport({ sendMail: mockSendMail }, "noreply@example.com", "");
+    EmailQueueSettings.retryBaseDelayMs = 1;
+    mockSendMail.mockRejectedValue(new Error("smtp down"));
+    EmailQueueEnqueue({ notification: notification(), recipient: "user@example.com" });
+    await EmailQueueWaitForIdle();
+
+    expect(mockSendMail).toHaveBeenCalledTimes(EmailQueueSettings.maxAttempts);
+    expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({
+        status: "failed",
+        attempts: EmailQueueSettings.maxAttempts,
+        error: "Error: smtp down",
+      }),
+    );
+  });
+
+  test("records queue-full drops as failures without attempts", async () => {
+    EmailQueueSetTransport({ sendMail: mockSendMail }, "noreply@example.com", "");
+    EmailQueueSettings.maxQueueSize = 0;
+    EmailQueueEnqueue({ notification: notification(), recipient: "user@example.com" });
+    await EmailQueueWaitForIdle();
+
+    expect(mockSendMail).not.toHaveBeenCalled();
+    expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({
+        status: "failed",
+        attempts: 0,
+        error: "Email queue full",
+      }),
+    );
+  });
+
+  test("records SMTP-not-configured drops as failures", async () => {
+    EmailQueueSetTransport(undefined, "noreply@example.com", "");
+    EmailQueueEnqueue({ notification: notification(), recipient: "user@example.com" });
+    await EmailQueueWaitForIdle();
+
+    expect(mockSendMail).not.toHaveBeenCalled();
+    expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({
+        status: "failed",
+        attempts: 0,
+        error: "SMTP not configured",
+      }),
+    );
+  });
+
+  test("never breaks delivery when recording fails", async () => {
+    EmailQueueSetTransport({ sendMail: mockSendMail }, "noreply@example.com", "");
+    EmailDeliveriesRecord.mockRejectedValueOnce(new Error("db down"));
+    EmailQueueEnqueue({ notification: notification(), recipient: "user@example.com" });
+    await EmailQueueWaitForIdle();
+
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
   });
 });
 

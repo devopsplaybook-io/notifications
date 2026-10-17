@@ -16,6 +16,9 @@ Centralized notification service for the DevOpsPlaybook.io ecosystem.
 - Configurable 90-day notification retention
 - Consolidated Settings page (account, change password, theme, API keys, email rules)
 - Email notification rules with SMTP configuration from environment variables
+- Producer onboarding: creating an API key shows a copyable `curl` example (real instance URL, sample payload) and a "Send test notification" action that validates the token end-to-end from the browser
+- Email delivery feedback: recent per-recipient delivery outcomes (sent/failed, attempts, last error) are visible under Settings → Email; queue-full and SMTP-not-configured drops are recorded as failures
+- Severity threshold matching for email rules ("warning and above", "error and above"); exact match remains the default
 
 ## Architecture
 
@@ -51,10 +54,11 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 | `DELETE /api/push/subscribe` | `Bearer <session>` | `{ "endpoint": "https://..." }`; removes the browser's stored subscription |
 | `GET /api/push/subscriptions` | `Bearer <session>` | Returns `{ "subscriptions": [] }`; each entry is `{ "id", "endpointOrigin", "userAgent", "createdAt", "endpointHash" }` of the session user's devices (the full endpoint, which contains capability tokens, is never returned) |
 | `DELETE /api/push/subscriptions/:id` | `Bearer <session>` | Revokes a push device by id; unknown or not-owned IDs return 404 |
-| `GET /api/emails/rules` | `Bearer <session>` | Returns `{ "rules": [] }`; each rule is `{ "id", "source", "severity", "recipient", "createdAt" }` |
-| `POST /api/emails/rules` | `Bearer <session>` | `{ "recipient": string }`; optional `source` and `severity` (empty or omitted = wildcard). Returns the created rule |
+| `GET /api/emails/rules` | `Bearer <session>` | Returns `{ "rules": [] }`; each rule is `{ "id", "source", "severity", "severityMode", "recipient", "createdAt" }` |
+| `POST /api/emails/rules` | `Bearer <session>` | `{ "recipient": string }`; optional `source`, `severity` (empty or omitted = wildcard) and `severityMode` (`exact`, default, or `threshold` — matches the rule severity and everything above it in the `info < success < warning < error` escalation order; unknown severities never satisfy a threshold). Returns the created rule |
 | `PUT /api/emails/rules/:id` | `Bearer <session>` | Same payload as creation; unknown IDs return 404 |
 | `DELETE /api/emails/rules/:id` | `Bearer <session>` | Removes the rule; unknown IDs return 404 |
+| `GET /api/emails/deliveries` | `Bearer <session>` | Returns `{ "deliveries": [] }`; the most recent 50 per-recipient delivery outcomes `{ "id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status" ("sent"/"failed"), "attempts", "error", "createdAt" }`, pruned with the notification retention |
 | `GET /api/emails/status` | `Bearer <session>` | Returns `{ "smtpConfigured": boolean }` |
 | `POST /api/emails/test` | `Bearer <session>` | `{ "recipient": string }`; sends a test email, 502 on SMTP failure |
 
@@ -64,7 +68,7 @@ Push fan-out is asynchronous: `POST /api/notifications` enqueues the notificatio
 
 ## Email notification rules
 
-Email rules email a new notification to a recipient when its source ("service") and severity match the rule. Each rule selects a service, a severity and a recipient; an empty service and/or severity acts as a wildcard (for example "all errors from any service" or "everything from fluxcd"). Matching is an exact, case-insensitive comparison — severities are not thresholds — and several rules can point at the same recipient, in which case the notification is emailed once per recipient. Rules are evaluated at creation time only: no retroactive emails are sent for notifications stored before the rule.
+Email rules email a new notification to a recipient when its source ("service") and severity match the rule. Each rule selects a service, a severity and a recipient; an empty service and/or severity acts as a wildcard (for example "all errors from any service" or "everything from fluxcd"). Matching is case-insensitive; by default severities are compared exactly, and a rule saved with `severityMode: "threshold"` matches its severity and everything above it in the `info < success < warning < error` escalation order (so "warning and above" catches warnings and errors without creating two exact rules; unknown producer severities never satisfy a threshold). Several rules can point at the same recipient, in which case the notification is emailed once per recipient. Rules are evaluated at creation time only: no retroactive emails are sent for notifications stored before the rule.
 
 Delivery follows the same best-effort pattern as push: a background in-memory queue with up to 3 attempts (exponential backoff, ten-second timeout per send, three concurrent sends); evaluation or delivery failures never fail the `POST /api/notifications` call and deliveries that exhaust their retries are counted in the `email.failures` metric. Queued emails are lost if the pod restarts. The HTML part of the email renders the notification body as markdown (GitHub-flavored with line breaks, the same rendering as the web UI) and sanitizes it with an allowlist: no scripts, styles or event handlers survive and links are restricted to http/https/mailto. The title, severity and source remain escaped plain text, and the plain-text part contains the raw markdown body.
 
@@ -80,7 +84,7 @@ The SMTP configuration comes from environment variables and is never stored in t
 | `SMTP_FROM` | empty | From address; required together with `SMTP_HOST` for deliveries |
 | `APP_PUBLIC_URL` | `https://notifications.didierhoarau.cloud` | Link included in the email body |
 
-Rules, the SMTP status and a "send test email" action are managed in the web UI under Settings → Email.
+Rules, the SMTP status, the recent delivery log (sent/failed outcomes with attempts and errors, answering "why didn't I get an email?") and a "send test email" action are managed in the web UI under Settings → Email. Test-email sends are recorded in the same log.
 
 ## Single-tenant setup and security
 

@@ -57,8 +57,8 @@ async function createDatabase() {
   await DbUtilsInit(span, { DATABASE_TYPE: "sqlite", DATA_DIR: directory }, sqlDir);
 }
 
-async function insertRule(source, severity, recipient) {
-  return EmailRulesCreate(span, source, severity, recipient);
+async function insertRule(source, severity, recipient, severityMode) {
+  return EmailRulesCreate(span, source, severity, recipient, severityMode);
 }
 
 describe("email rules data (sqlite)", () => {
@@ -108,6 +108,7 @@ describe("email rules data (sqlite)", () => {
   test("round-trips rules through create, list, get, update and delete", async () => {
     const created = await insertRule("fluxcd", "error", "user@example.com");
     expect(created.id).toBeTruthy();
+    expect(created.severityMode).toBe("exact");
 
     const listed = await EmailRulesList(span);
     expect(listed).toHaveLength(1);
@@ -115,11 +116,13 @@ describe("email rules data (sqlite)", () => {
       id: created.id,
       source: "fluxcd",
       severity: "error",
+      severityMode: "exact",
       recipient: "user@example.com",
     });
 
     await expect(EmailRulesGet(span, created.id)).resolves.toMatchObject({
       recipient: "user@example.com",
+      severityMode: "exact",
     });
     await expect(EmailRulesGet(span, "missing")).resolves.toBeUndefined();
 
@@ -129,7 +132,15 @@ describe("email rules data (sqlite)", () => {
     await expect(EmailRulesGet(span, created.id)).resolves.toMatchObject({
       source: "",
       severity: "warning",
+      severityMode: "exact",
       recipient: "other@example.com",
+    });
+    await expect(
+      EmailRulesUpdate(span, created.id, "", "warning", "other@example.com", "threshold"),
+    ).resolves.toBe(true);
+    await expect(EmailRulesGet(span, created.id)).resolves.toMatchObject({
+      severity: "warning",
+      severityMode: "threshold",
     });
     await expect(
       EmailRulesUpdate(span, "missing", "", "warning", "other@example.com"),
@@ -138,6 +149,64 @@ describe("email rules data (sqlite)", () => {
     await expect(EmailRulesDelete(span, created.id)).resolves.toBe(1);
     await expect(EmailRulesList(span)).resolves.toHaveLength(0);
     await expect(EmailRulesDelete(span, "missing")).resolves.toBe(0);
+  });
+
+  test("threshold rules match their severity and everything above it", async () => {
+    await insertRule("", "warning", "warn-threshold@example.com", "threshold");
+    await insertRule("", "error", "error-threshold@example.com", "threshold");
+    await insertRule("", "warning", "warn-exact@example.com");
+
+    const recipientsFor = async (source, severity) =>
+      (await EmailRulesMatching(span, source, severity)).map((rule) => rule.recipient);
+
+    // "warning and above" catches warnings and errors
+    expect(await recipientsFor("anything", "warning")).toEqual(
+      expect.arrayContaining(["warn-threshold@example.com", "warn-exact@example.com"]),
+    );
+    expect(await recipientsFor("anything", "error")).toEqual(
+      expect.arrayContaining(["warn-threshold@example.com", "error-threshold@example.com"]),
+    );
+    expect(await recipientsFor("anything", "error")).not.toContain("warn-exact@example.com");
+
+    // info/success never satisfy a threshold
+    expect(await recipientsFor("anything", "info")).toEqual([]);
+    expect(await recipientsFor("anything", "success")).toEqual([]);
+
+    // unknown producer severities never satisfy a threshold either
+    expect(await recipientsFor("anything", "critical")).toEqual([]);
+
+    // the threshold base is matched case-insensitively
+    await insertRule("", "ERROR", "upper@example.com", "threshold");
+    expect(await recipientsFor("anything", "error")).toContain("upper@example.com");
+  });
+
+  test("error threshold rules match errors only and exact rules keep working", async () => {
+    await insertRule("", "error", "error-threshold@example.com", "threshold");
+    await insertRule("fluxcd", "error", "flux-exact@example.com");
+
+    const recipientsFor = async (source, severity) =>
+      (await EmailRulesMatching(span, source, severity)).map((rule) => rule.recipient);
+
+    expect(await recipientsFor("fluxcd", "error")).toEqual(
+      expect.arrayContaining(["error-threshold@example.com", "flux-exact@example.com"]),
+    );
+    expect(await recipientsFor("fluxcd", "warning")).toEqual([]);
+    expect(await recipientsFor("other", "error")).toEqual(
+      expect.arrayContaining(["error-threshold@example.com"]),
+    );
+    expect(await recipientsFor("other", "error")).not.toContain("flux-exact@example.com");
+  });
+
+  test("threshold rules with an empty severity stay the any-severity wildcard", async () => {
+    await insertRule("", "", "empty-threshold@example.com", "threshold");
+    for (const severity of ["info", "success", "warning", "error", "unknown"]) {
+      expect(await EmailRulesMatching(span, "anything", severity)).toEqual([
+        expect.objectContaining({
+          recipient: "empty-threshold@example.com",
+          severityMode: "threshold",
+        }),
+      ]);
+    }
   });
 
   test("allows several rules with the same recipient", async () => {

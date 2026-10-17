@@ -35,9 +35,8 @@
           <label>
             Severity
             <select v-model="formSeverity">
-              <option value="">Any severity</option>
-              <option v-for="severity in canonicalSeverities" :key="severity" :value="severity">
-                {{ severity }}
+              <option v-for="option in severityOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
               </option>
             </select>
           </label>
@@ -81,7 +80,7 @@
             <tbody>
               <tr v-for="rule in rules" :key="rule.id">
                 <td>{{ rule.source || "Any" }}</td>
-                <td>{{ rule.severity || "Any" }}</td>
+                <td>{{ severityLabel(rule) }}</td>
                 <td>{{ rule.recipient }}</td>
                 <td>{{ formatDate(rule.createdAt) }}</td>
                 <td class="actions">
@@ -93,6 +92,51 @@
           </table>
         </figure>
       </div>
+
+      <article id="email-deliveries">
+        <header>
+          <h4>Recent Deliveries</h4>
+        </header>
+        <section>
+          <p v-if="deliveriesError" class="form-error">{{ deliveriesError }}</p>
+          <div v-if="deliveries.length === 0" class="empty-state">
+            <i class="bi bi-envelope"></i>
+            <p>No email deliveries yet.</p>
+          </div>
+          <figure v-else>
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Recipient</th>
+                  <th>Notification</th>
+                  <th>Status</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="delivery in deliveries" :key="delivery.id">
+                  <td>{{ formatRelativeTime(delivery.createdAt) }}</td>
+                  <td>{{ delivery.recipient }}</td>
+                  <td>{{ delivery.notificationTitle || "—" }}</td>
+                  <td>
+                    <span :class="delivery.status === 'sent' ? 'status-sent' : 'status-failed'">
+                      {{ delivery.status === "sent" ? "✓ sent" : "✗ failed" }}
+                    </span>
+                  </td>
+                  <td>
+                    <span v-if="delivery.status !== 'sent'">{{ delivery.error }}</span>
+                    <span v-if="delivery.attempts > 1">
+                      {{ delivery.attempts }} attempts
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </figure>
+          <button class="secondary" @click="loadDeliveries">Refresh</button>
+        </section>
+      </article>
 
       <article id="test-email">
         <header><h4>Send Test Email</h4></header>
@@ -117,10 +161,22 @@
 import axios from "axios";
 import Config from "~~/services/Config";
 import { AuthService } from "~~/services/AuthService";
+import { formatRelativeTime } from "~/services/NotificationFormat";
 
 const authenticationStore = AuthenticationStore();
 
-const canonicalSeverities = ["info", "success", "warning", "error"];
+// Threshold options carry a ":threshold" suffix so a single select drives both
+// the rule severity and its severityMode.
+const SEVERITY_THRESHOLD_SUFFIX = ":threshold";
+const severityOptions = [
+  { value: "", label: "Any severity" },
+  { value: "info", label: "Info" },
+  { value: "success", label: "Success" },
+  { value: "warning", label: "Warning (exact)" },
+  { value: `warning${SEVERITY_THRESHOLD_SUFFIX}`, label: "Warning and above" },
+  { value: "error", label: "Error (exact)" },
+  { value: `error${SEVERITY_THRESHOLD_SUFFIX}`, label: "Error and above" },
+];
 
 const rules = ref([]);
 const knownSources = ref([]);
@@ -132,10 +188,32 @@ const formSeverity = ref("");
 const formRecipient = ref("");
 const testRecipient = ref("");
 const testResult = ref(null);
+const deliveries = ref([]);
+const deliveriesError = ref("");
 
 function formatDate(dateStr) {
   if (!dateStr) return "";
   return new Date(dateStr).toLocaleString();
+}
+
+function severityLabel(rule) {
+  if (!rule.severity) {
+    return "Any";
+  }
+  return rule.severityMode === "threshold"
+    ? `${rule.severity} and above`
+    : rule.severity;
+}
+
+function formSelectionToPayload() {
+  const threshold = formSeverity.value.endsWith(SEVERITY_THRESHOLD_SUFFIX);
+  const severity = threshold
+    ? formSeverity.value.slice(0, -SEVERITY_THRESHOLD_SUFFIX.length)
+    : formSeverity.value;
+  return {
+    severity,
+    severityMode: threshold ? "threshold" : "exact",
+  };
 }
 
 function resetForm() {
@@ -186,9 +264,11 @@ async function loadSources() {
 }
 
 async function saveRule() {
+  const { severity, severityMode } = formSelectionToPayload();
   const payload = {
     source: formSource.value.trim(),
-    severity: formSeverity.value,
+    severity,
+    severityMode,
     recipient: formRecipient.value.trim(),
   };
   try {
@@ -216,8 +296,27 @@ async function saveRule() {
 function startEdit(rule) {
   editingRuleId.value = rule.id;
   formSource.value = rule.source || "";
-  formSeverity.value = rule.severity || "";
+  formSeverity.value =
+    rule.severityMode === "threshold" && rule.severity
+      ? `${rule.severity}${SEVERITY_THRESHOLD_SUFFIX}`
+      : rule.severity || "";
   formRecipient.value = rule.recipient || "";
+}
+
+async function loadDeliveries() {
+  deliveriesError.value = "";
+  try {
+    const headers = await AuthService.getAuthHeader();
+    const res = await axios.get(
+      `${(await Config.get()).SERVER_URL}/emails/deliveries`,
+      headers,
+    );
+    deliveries.value = res.data.deliveries;
+  } catch (err) {
+    console.error("Failed to load email deliveries", err);
+    deliveriesError.value =
+      err.response?.data?.error || "Failed to load email deliveries";
+  }
 }
 
 async function deleteRule(id) {
@@ -262,6 +361,7 @@ onMounted(async () => {
     loadStatus();
     loadRules();
     loadSources();
+    loadDeliveries();
   }
 });
 </script>
@@ -319,6 +419,14 @@ onMounted(async () => {
 }
 
 .form-error {
+  color: var(--color-danger);
+}
+
+.status-sent {
+  color: var(--color-success);
+}
+
+.status-failed {
   color: var(--color-danger);
 }
 </style>

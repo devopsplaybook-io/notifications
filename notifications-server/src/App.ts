@@ -33,6 +33,7 @@ import { PushInit } from "./notifications/PushService";
 import { PushRoutes } from "./notifications/PushRoutes";
 import { EmailInit } from "./emails/EmailService";
 import { EmailRulesRoutes } from "./emails/EmailRulesRoutes";
+import { EmailDeliveriesPrune } from "./emails/EmailDeliveriesData";
 import { NotificationsDataPrune } from "./notifications/NotificationsData";
 
 const logger = OTelLogger().createModuleLogger("app");
@@ -91,6 +92,7 @@ Promise.resolve().then(async () => {
     const pruneSpan = OTelTracer().startSpan("notifications.retention");
     try {
       await NotificationsDataPrune(pruneSpan, cutoff);
+      await EmailDeliveriesPrune(pruneSpan, cutoff);
     } catch (error) {
       logger.error("Notification retention pruning failed", toError(error));
     } finally {
