@@ -4,6 +4,9 @@ jest.mock("../dist/emails/EmailQueue", () => ({
   CreateTransportFromConfig: jest.fn(),
   BuildEmailMessage: jest.fn(),
 }));
+jest.mock("../dist/emails/EmailDeliveriesData", () => ({
+  EmailDeliveriesRecord: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock("../dist/emails/EmailRulesData", () => ({
   EmailRulesMatching: jest.fn().mockResolvedValue([]),
 }));
@@ -19,6 +22,7 @@ jest.mock("../dist/OTelContext", () => ({
 }));
 
 const { EmailQueueEnqueue, CreateTransportFromConfig, BuildEmailMessage } = require("../dist/emails/EmailQueue");
+const { EmailDeliveriesRecord } = require("../dist/emails/EmailDeliveriesData");
 const { EmailRulesMatching } = require("../dist/emails/EmailRulesData");
 const {
   EmailEvaluateNotification,
@@ -96,17 +100,42 @@ describe("email service", () => {
     expect(EmailQueueEnqueue).not.toHaveBeenCalled();
   });
 
-  test("sends the test email through a configured transport", async () => {
+  test("sends the test email through a configured transport and records the outcome", async () => {
     const sendMail = jest.fn().mockResolvedValue(undefined);
     CreateTransportFromConfig.mockReturnValueOnce({ sendMail });
     await expect(EmailSendTest(undefined, "user@example.com")).resolves.toBeUndefined();
     expect(sendMail).toHaveBeenCalledTimes(1);
     expect(sendMail).toHaveBeenCalledWith(MOCK_MESSAGE);
+    expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        recipient: "user@example.com",
+        notificationTitle: "Test email",
+        status: "sent",
+        attempts: 1,
+        error: "",
+      }),
+    );
+  });
+
+  test("records and rethrows a failed test email", async () => {
+    const sendMail = jest.fn().mockRejectedValue(new Error("smtp down"));
+    CreateTransportFromConfig.mockReturnValueOnce({ sendMail });
+    await expect(EmailSendTest(undefined, "user@example.com")).rejects.toThrow("smtp down");
+    expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        recipient: "user@example.com",
+        status: "failed",
+        error: "Error: smtp down",
+      }),
+    );
   });
 
   test("throws when sending a test email without a transport", async () => {
     await expect(EmailSendTest(undefined, "user@example.com")).rejects.toThrow(
       "Email not configured",
     );
+    expect(EmailDeliveriesRecord).not.toHaveBeenCalled();
   });
 });

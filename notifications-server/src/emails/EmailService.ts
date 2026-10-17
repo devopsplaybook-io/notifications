@@ -8,6 +8,7 @@ import {
   EmailQueueEnqueue,
   EmailQueueSetTransport,
 } from "./EmailQueue";
+import { EmailDeliveriesRecord } from "./EmailDeliveriesData";
 import { EmailRulesMatching } from "./EmailRulesData";
 
 let config: Config;
@@ -57,7 +58,8 @@ export async function EmailEvaluateNotification(
 /**
  * Send a test email immediately (not queued) so the caller can report the
  * delivery outcome; throws when the transport is not configured or the SMTP
- * server rejects the message.
+ * server rejects the message. The outcome is recorded so SMTP health shows up
+ * in the same delivery log as regular notifications.
  */
 export async function EmailSendTest(
   context: Span,
@@ -76,9 +78,25 @@ export async function EmailSendTest(
     testNotification.source = "notifications";
     testNotification.severity = "info";
     testNotification.createdAt = new Date().toISOString();
-    await transport.sendMail(
-      BuildEmailMessage(testNotification, recipient),
-    );
+    const record = (status: string, error = ""): void => {
+      EmailDeliveriesRecord(span, {
+        recipient,
+        notificationId: "",
+        notificationTitle: testNotification.title,
+        source: testNotification.source,
+        severity: testNotification.severity,
+        status,
+        attempts: 1,
+        error,
+      }).catch(() => undefined);
+    };
+    try {
+      await transport.sendMail(BuildEmailMessage(testNotification, recipient));
+    } catch (error) {
+      record("failed", String(error));
+      throw error;
+    }
+    record("sent");
   } finally {
     span.end();
   }

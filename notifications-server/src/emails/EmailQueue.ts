@@ -5,6 +5,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { OTelLogger, OTelMeter, OTelTracer } from "../OTelContext";
 import { Config } from "../Config";
 import { Notification } from "../model/Notification";
+import { EmailDeliveriesRecord } from "./EmailDeliveriesData";
 
 const logger = OTelLogger().createModuleLogger("EmailQueue");
 const toError = (error: unknown): Error =>
@@ -174,12 +175,40 @@ const queue: EmailJob[] = [];
 let processing = false;
 let idleResolvers: Array<() => void> = [];
 
+/**
+ * Persist a delivery outcome for the Recent Deliveries view. Fire-and-forget:
+ * a recording failure must never break or delay the delivery itself.
+ */
+function recordDelivery(
+  job: EmailJob,
+  status: "sent" | "failed",
+  attempts: number,
+  error = "",
+): void {
+  EmailDeliveriesRecord(undefined, {
+    recipient: job.recipient,
+    notificationId: job.notification.id || "",
+    notificationTitle: job.notification.title || "",
+    source: job.notification.source || "",
+    severity: job.notification.severity || "",
+    status,
+    attempts,
+    error,
+  }).catch((recordingError) => {
+    logger.error(
+      `Failed to record email delivery outcome for notification ${job.notification.id}`,
+      toError(recordingError),
+    );
+  });
+}
+
 export function EmailQueueEnqueue(job: EmailJob): void {
   if (queue.length >= EmailQueueSettings.maxQueueSize) {
     countEmailFailure();
     logger.warn(
       `Email queue full (${EmailQueueSettings.maxQueueSize}); dropping notification ${job.notification.id} for ${MaskRecipient(job.recipient)}`,
     );
+    recordDelivery(job, "failed", 0, "Email queue full");
     return;
   }
   queue.push(job);
@@ -253,17 +282,21 @@ async function deliverEmail(job: EmailJob): Promise<void> {
         `Email not configured; dropping notification ${job.notification.id} for ${MaskRecipient(job.recipient)}`,
         span,
       );
+      recordDelivery(job, "failed", 0, "SMTP not configured");
       return;
     }
     const message = BuildEmailMessage(job.notification, job.recipient);
+    let lastError = "";
     for (let attempt = 1; attempt <= EmailQueueSettings.maxAttempts; attempt += 1) {
       if (attempt > 1) {
         await delay(EmailQueueSettings.retryBaseDelayMs * 2 ** (attempt - 2));
       }
       try {
         await sendWithTimeout(message);
+        recordDelivery(job, "sent", attempt);
         return;
       } catch (error) {
+        lastError = String(error);
         logger.warn(
           `Email delivery failed for ${MaskRecipient(job.recipient)} (attempt ${attempt}/${EmailQueueSettings.maxAttempts}): ${error}`,
           span,
@@ -273,6 +306,7 @@ async function deliverEmail(job: EmailJob): Promise<void> {
         }
       }
     }
+    recordDelivery(job, "failed", EmailQueueSettings.maxAttempts, lastError);
   } finally {
     span.end();
   }

@@ -25,6 +25,19 @@
           <section>
             <p>Copy this key now. It won't be shown again:</p>
             <code>{{ createdToken }}</code>
+            <div class="curl-example">
+              <p>Send a notification with this key from any producer:</p>
+              <code id="curl-example">{{ curlExample }}</code>
+              <div class="form-actions">
+                <button class="secondary" @click="copyCurlExample">
+                  {{ curlCopied ? "Copied!" : "Copy curl example" }}
+                </button>
+                <button @click="sendTestNotification">Send test notification</button>
+              </div>
+              <p v-if="testResult" :class="testResult.ok ? 'test-success' : 'form-error'">
+                {{ testResult.message }}
+              </p>
+            </div>
           </section>
         </article>
       </div>
@@ -70,10 +83,67 @@ const authenticationStore = AuthenticationStore();
 const tokens = ref([]);
 const newTokenName = ref("");
 const createdToken = ref("");
+const createdTokenName = ref("");
+const curlExample = ref("");
+const curlCopied = ref(false);
+const testResult = ref(null);
 
 function formatDate(dateStr) {
   if (!dateStr) return "";
   return new Date(dateStr).toLocaleString();
+}
+
+function buildCurlExample(serverUrl) {
+  const payload = JSON.stringify({
+    title: "Test notification",
+    body: "Sent from the Notifications API keys page",
+    source: createdTokenName.value || "my-app",
+    severity: "info",
+  });
+  return [
+    `curl -X POST ${window.location.origin}${serverUrl}/notifications`,
+    `-H "Authorization: Bearer ${createdToken.value}"`,
+    '-H "Content-Type: application/json"',
+    `-d '${payload}'`,
+  ].join(" ");
+}
+
+async function copyCurlExample() {
+  try {
+    await navigator.clipboard.writeText(curlExample.value);
+    curlCopied.value = true;
+    setTimeout(() => {
+      curlCopied.value = false;
+    }, 2000);
+  } catch (err) {
+    console.error("Failed to copy curl example", err);
+  }
+}
+
+async function sendTestNotification() {
+  testResult.value = null;
+  try {
+    const serverUrl = (await Config.get()).SERVER_URL;
+    await axios.post(
+      `${serverUrl}/notifications`,
+      {
+        title: "Test notification",
+        body: "Sent from the Notifications API keys page",
+        source: createdTokenName.value || "my-app",
+        severity: "info",
+      },
+      { headers: { Authorization: `Bearer ${createdToken.value}` } },
+    );
+    testResult.value = {
+      ok: true,
+      message: "Test notification sent — it is now in your feed.",
+    };
+  } catch (err) {
+    testResult.value = {
+      ok: false,
+      message: err.response?.data?.error || "Test notification failed",
+    };
+  }
 }
 
 async function loadTokens() {
@@ -91,14 +161,18 @@ async function loadTokens() {
 
 async function createToken() {
   createdToken.value = "";
+  testResult.value = null;
   try {
+    const serverUrl = (await Config.get()).SERVER_URL;
     const headers = await AuthService.getAuthHeader();
     const res = await axios.post(
-      `${(await Config.get()).SERVER_URL}/tokens`,
+      `${serverUrl}/tokens`,
       { name: newTokenName.value },
       headers,
     );
     createdToken.value = res.data.token;
+    createdTokenName.value = res.data.name || "";
+    curlExample.value = buildCurlExample(serverUrl);
     newTokenName.value = "";
     loadTokens();
   } catch (err) {
@@ -154,5 +228,24 @@ onMounted(async () => {
   border-radius: var(--radius-md);
   word-break: break-all;
   font-size: var(--font-sm);
+}
+
+.curl-example {
+  margin-top: var(--space-base);
+}
+
+.curl-example .form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.test-success {
+  color: var(--color-success);
+}
+
+.form-error {
+  color: var(--color-danger);
 }
 </style>

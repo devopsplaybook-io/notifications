@@ -331,6 +331,94 @@ describe("database migrations", () => {
     ).toThrow();
   });
 
+  test("applies 0008 email deliveries and severityMode to an existing SQLite database", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "notifications-db-"));
+    const database = new Database(path.join(directory, "database.db"));
+    try {
+      for (const file of migrationFiles(sqliteMigrations)) {
+        if (file === "init-0008.sql") break;
+        database.exec(fs.readFileSync(path.join(sqliteMigrations, file), "utf8"));
+      }
+      database
+        .prepare(
+          "INSERT INTO email_rules (id, source, severity, recipient, createdAt) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run("rule-1", "fluxcd", "error", "user@example.com", "2026-01-01T00:00:00.000Z");
+
+      database.exec(
+        fs.readFileSync(path.join(sqliteMigrations, "init-0008.sql"), "utf8"),
+      );
+
+      // Pre-existing rules keep working and default to exact matching
+      const rule = database.prepare("SELECT * FROM email_rules WHERE id = ?").get("rule-1");
+      expect(rule.severityMode).toBe("exact");
+      const insertDelivery = database.prepare(
+        "INSERT INTO email_deliveries (id, recipient, notificationId, notificationTitle, source, severity, status, attempts, error, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      insertDelivery.run(
+        "delivery-1", "user@example.com", "n-1", "Build", "ci", "error", "failed", 3, "smtp down", "2026-01-01T00:00:00.000Z",
+      );
+      const deliveries = database.prepare("SELECT * FROM email_deliveries").all();
+      expect(deliveries).toHaveLength(1);
+      expect(deliveries[0].status).toBe("failed");
+      expect(deliveries[0].attempts).toBe(3);
+      // New rules must keep working without providing the new column
+      database
+        .prepare(
+          "INSERT INTO email_rules (id, source, severity, recipient, createdAt) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run("rule-2", "", "", "other@example.com", "2026-01-02T00:00:00.000Z");
+      expect(
+        database.prepare("SELECT severityMode FROM email_rules WHERE id = ?").get("rule-2")
+          .severityMode,
+      ).toBe("exact");
+
+      expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
+    } finally {
+      database.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("applies the full Postgres migration sequence including 0008", () => {
+    const { newDb } = require("pg-mem");
+    const crypto = require("crypto");
+    const database = newDb();
+    database.public.registerFunction({
+      name: "gen_random_uuid",
+      args: [],
+      returns: "uuid",
+      implementation: () => crypto.randomUUID(),
+      impure: true,
+    });
+    for (const file of migrationFiles(postgresMigrations)) {
+      database.public.none(
+        fs.readFileSync(path.join(postgresMigrations, file), "utf8"),
+      );
+    }
+    database.public.none(`
+      INSERT INTO email_rules ("id", "source", "severity", "severityMode", "recipient", "createdAt")
+      VALUES ('00000000-0000-0000-0000-000000000001', 'fluxcd', 'error', 'threshold', 'user@example.com', '2026-01-01T00:00:00.000Z');
+      INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+      VALUES ('00000000-0000-0000-0000-000000000002', 'user@example.com', '00000000-0000-0000-0000-000000000003', 'Build', 'ci', 'error', 'sent', 1, '', '2026-01-01T00:00:00.000Z');
+    `);
+
+    expect(
+      database.public.one("SELECT COUNT(*) AS count FROM email_deliveries").count,
+    ).toBe(1);
+    const deliveries = database.public.many(
+      'SELECT * FROM email_deliveries WHERE "status" = \'sent\'',
+    );
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0].attempts).toBe(1);
+    expect(deliveries[0].notificationTitle).toBe("Build");
+    expect(
+      database.public.one(
+        "SELECT \"severityMode\" FROM email_rules WHERE \"id\" = '00000000-0000-0000-0000-000000000001'",
+      ).severityMode,
+    ).toBe("threshold");
+  });
+
   test("applies the Postgres migration sequence in an in-memory Postgres emulator", () => {
     const { newDb } = require("pg-mem");
     const database = newDb();
