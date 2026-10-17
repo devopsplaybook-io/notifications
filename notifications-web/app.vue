@@ -1,8 +1,19 @@
 <script setup>
 import { PushService } from "~/services/PushService";
+import { formatTabTitle } from "~/services/TabTitle";
 
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
+
+// Reactive tab title: the open tab itself signals new items, e.g.
+// "(3) Notifications". The base title comes from nuxt.config.ts.
+useHead({
+  title: () =>
+    formatTabTitle(
+      notificationsStore.unreadCount,
+      authenticationStore.isAuthenticated,
+    ),
+});
 
 useAppHeight();
 

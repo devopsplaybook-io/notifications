@@ -1,8 +1,22 @@
 <template>
   <div class="page">
-    <div v-if="!authenticationStore.isAuthenticated" class="empty-state">
-      <i class="bi bi-bell-slash-fill"></i>
-      <p>Please login to view notifications.</p>
+    <div v-if="!authenticationStore.isAuthenticated" class="login-surface">
+      <div v-if="!serverInitialized" class="empty-state">
+        <i class="bi bi-person-plus-fill"></i>
+        <p>
+          No admin user exists yet.
+          <NuxtLink to="/settings/profile">Create it in Settings → Profile</NuxtLink>.
+        </p>
+      </div>
+      <template v-else>
+        <div class="empty-state">
+          <i class="bi bi-bell-fill"></i>
+          <p>Sign in to view your notifications.</p>
+        </div>
+        <article class="login-card">
+          <LoginForm @authenticated="initAuthenticatedView" />
+        </article>
+      </template>
     </div>
 
     <Loading
@@ -230,6 +244,7 @@
 <script setup>
 import { PushService } from "~/services/PushService";
 import { RenderCache } from "~/services/RenderCache";
+import { UserService } from "~/services/UserService";
 import {
   extractNotificationUrl,
   formatAbsoluteTime,
@@ -249,6 +264,7 @@ const pushPermission = ref("denied");
 const pushBusy = ref(false);
 const pushError = ref("");
 const searchDebounceTimer = ref(null);
+const serverInitialized = ref(true);
 let unreadPollTimer = null;
 
 const pushHint = computed(() => {
@@ -430,16 +446,31 @@ async function togglePush() {
   }
 }
 
+async function initAuthenticatedView() {
+  if (unreadPollTimer) {
+    clearInterval(unreadPollTimer);
+    unreadPollTimer = null;
+  }
+  await refreshNotifications();
+  await handleDeepLink();
+  unreadPollTimer = setInterval(onPollTick, 60000);
+  pushSupported.value = await PushService.isSupported();
+  pushSubscribed.value = await PushService.isSubscribed();
+  pushPermission.value = await PushService.getPermission();
+}
+
 onMounted(async () => {
   document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("focus", refreshOnWake);
+  // When the first admin account does not exist yet, point the visitor to the
+  // bootstrap form in Settings instead of a login that can never succeed.
+  try {
+    serverInitialized.value = await UserService.isInitialized();
+  } catch (err) {
+    console.error("Failed to check user initialization", err);
+  }
   if (await authenticationStore.ensureAuthenticated()) {
-    await refreshNotifications();
-    await handleDeepLink();
-    unreadPollTimer = setInterval(onPollTick, 60000);
-    pushSupported.value = await PushService.isSupported();
-    pushSubscribed.value = await PushService.isSubscribed();
-    pushPermission.value = await PushService.getPermission();
+    await initAuthenticatedView();
   }
 });
 
@@ -458,6 +489,16 @@ onUnmounted(() => {
 .page {
   height: 100%;
   overflow-y: auto;
+}
+
+.login-surface {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-sm);
+}
+
+.login-card {
+  margin: 0;
 }
 
 .page-actions {

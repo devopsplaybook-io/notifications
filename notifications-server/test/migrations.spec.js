@@ -220,6 +220,117 @@ describe("database migrations", () => {
     ).toBe(1);
   });
 
+  test("applies 0007 push device columns to an existing SQLite database and backfills ids", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "notifications-db-"));
+    const database = new Database(path.join(directory, "database.db"));
+    try {
+      for (const file of migrationFiles(sqliteMigrations)) {
+        if (file === "init-0007.sql") break;
+        database.exec(fs.readFileSync(path.join(sqliteMigrations, file), "utf8"));
+      }
+      const insertSubscription = database.prepare(
+        "INSERT INTO push_subscriptions (userId, endpoint, subscription) VALUES (?, ?, ?)",
+      );
+      insertSubscription.run("user-1", "https://push.example/one", '{"v":1}');
+      insertSubscription.run("user-1", "https://push.example/two", "{}");
+      insertSubscription.run("user-2", "https://push.example/three", "{}");
+
+      database.exec(
+        fs.readFileSync(path.join(sqliteMigrations, "init-0007.sql"), "utf8"),
+      );
+
+      const subscriptions = database
+        .prepare("SELECT * FROM push_subscriptions ORDER BY endpoint")
+        .all();
+      expect(subscriptions).toHaveLength(3);
+      expect(subscriptions[0].endpoint).toBe("https://push.example/one");
+      expect(subscriptions[0].subscription).toBe('{"v":1}');
+      expect(subscriptions[0].userAgent).toBe("");
+      expect(subscriptions[0].createdAt).toBe("");
+      const ids = new Set(subscriptions.map((row) => row.id));
+      expect(ids.size).toBe(3);
+      for (const id of ids) {
+        expect(id).toMatch(/^[0-9a-f]{32}$/);
+      }
+      // New rows must keep working without providing the new columns.
+      insertSubscription.run("user-3", "https://push.example/four", "{}");
+      const added = database
+        .prepare("SELECT * FROM push_subscriptions WHERE endpoint = ?")
+        .get("https://push.example/four");
+      expect(added.id).toMatch(/^[0-9a-f]{32}$/);
+      expect(added.userAgent).toBe("");
+      // Ids are unique: a duplicate insert must fail.
+      const duplicate = database.prepare(
+        "INSERT INTO push_subscriptions (id, \"userId\", endpoint, subscription) VALUES (?, ?, ?, ?)",
+      );
+      expect(() =>
+        duplicate.run(subscriptions[0].id, "user-9", "https://push.example/five", "{}"),
+      ).toThrow();
+
+      expect(
+        database.pragma("integrity_check", { simple: true }),
+      ).toBe("ok");
+    } finally {
+      database.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("applies 0007 push device columns in the Postgres emulator", () => {
+    const { newDb } = require("pg-mem");
+    const crypto = require("crypto");
+    const database = newDb();
+    database.public.registerFunction({
+      name: "gen_random_uuid",
+      args: [],
+      returns: "uuid",
+      implementation: () => crypto.randomUUID(),
+      impure: true,
+    });
+    for (const file of migrationFiles(postgresMigrations)) {
+      if (file === "init-0007.sql") break;
+      database.public.none(
+        fs.readFileSync(path.join(postgresMigrations, file), "utf8"),
+      );
+    }
+    database.public.none(`
+      INSERT INTO push_subscriptions ("userId", "endpoint", "subscription")
+      VALUES ('00000000-0000-0000-0000-000000000001', 'https://push.example/one', '{"v":1}');
+      INSERT INTO push_subscriptions ("userId", "endpoint", "subscription")
+      VALUES ('00000000-0000-0000-0000-000000000002', 'https://push.example/two', '{}');
+    `);
+
+    database.public.none(
+      fs.readFileSync(path.join(postgresMigrations, "init-0007.sql"), "utf8"),
+    );
+
+    const subscriptions = database.public.many(
+      'SELECT * FROM push_subscriptions ORDER BY "endpoint"',
+    );
+    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions[0].endpoint).toBe("https://push.example/one");
+    expect(subscriptions[0].subscription).toBe('{"v":1}');
+    expect(subscriptions[0].userAgent).toBe("");
+    expect(subscriptions[0].createdAt).toBe("");
+    const ids = new Set(subscriptions.map((row) => row.id));
+    expect(ids.size).toBe(2);
+    // New rows get generated ids from the column default.
+    database.public.none(
+      `INSERT INTO push_subscriptions ("userId", "endpoint", "subscription")
+       VALUES ('00000000-0000-0000-0000-000000000003', 'https://push.example/three', '{}')`,
+    );
+    const added = database.public.one(
+      `SELECT * FROM push_subscriptions WHERE "endpoint" = 'https://push.example/three'`,
+    );
+    expect(added.id).not.toBeNull();
+    expect(() =>
+      database.public.none(
+        `INSERT INTO push_subscriptions ("id", "userId", "endpoint", "subscription")
+         VALUES ('${subscriptions[0].id}', '00000000-0000-0000-0000-000000000009', 'https://push.example/four', '{}')`,
+      ),
+    ).toThrow();
+  });
+
   test("applies the Postgres migration sequence in an in-memory Postgres emulator", () => {
     const { newDb } = require("pg-mem");
     const database = newDb();

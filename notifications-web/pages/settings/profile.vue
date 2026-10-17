@@ -20,16 +20,7 @@
       <div v-else-if="!authenticationStore.isAuthenticated">
         <h3><i class="bi bi-box-arrow-in-right"></i> Login</h3>
         <article>
-          <label>
-            Username
-            <input type="text" v-model="name" placeholder="Enter username" />
-          </label>
-          <label>
-            Password
-            <input type="password" v-model="password" placeholder="Enter password" />
-          </label>
-          <button @click="login" :disabled="!name || !password">Login</button>
-          <p v-if="error" class="form-error">{{ error }}</p>
+          <LoginForm @authenticated="onAuthenticated" />
         </article>
       </div>
 
@@ -100,6 +91,7 @@ const themeOptions = [
 ];
 
 const authenticationStore = AuthenticationStore();
+const router = useRouter();
 
 const userName = ref("");
 const name = ref("");
@@ -110,6 +102,8 @@ const error = ref("");
 const passwordError = ref("");
 const initialized = ref(true);
 
+// The login form lives in components/LoginForm.vue; this helper only bridges
+// the create-admin bootstrap, which reuses the profile fields below.
 async function login() {
   error.value = "";
   try {
@@ -127,6 +121,11 @@ async function login() {
   }
 }
 
+function onAuthenticated() {
+  userName.value = "";
+  router.push("/");
+}
+
 async function createUser() {
   error.value = "";
   try {
@@ -135,6 +134,7 @@ async function createUser() {
       password: password.value,
     });
     await login();
+    router.push("/");
   } catch (err) {
     error.value = err.response?.data?.error || "Failed to create user";
   }

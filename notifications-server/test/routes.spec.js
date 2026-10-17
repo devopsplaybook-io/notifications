@@ -49,8 +49,13 @@ jest.mock("../dist/notifications/PushService", () => ({
   PushIsValidSubscription: jest.fn((subscription) =>
     Boolean(subscription?.endpoint && subscription?.keys?.p256dh && subscription?.keys?.auth),
   ),
+  PushNormalizeUserAgent: jest.fn((userAgent) =>
+    typeof userAgent === "string" ? userAgent.slice(0, 500) : "",
+  ),
   PushSubscribe: jest.fn().mockResolvedValue(undefined),
+  PushListSubscriptions: jest.fn().mockResolvedValue([]),
   PushUnsubscribe: jest.fn().mockResolvedValue(undefined),
+  PushUnsubscribeById: jest.fn().mockResolvedValue(false),
 }));
 
 jest.mock("../dist/emails/EmailService", () => ({
@@ -65,7 +70,9 @@ const { ApiTokensValidate } = require("../dist/apitokens/ApiTokensData");
 const notificationsData = require("../dist/notifications/NotificationsData");
 const {
   PushSubscribe,
+  PushListSubscriptions,
   PushUnsubscribe,
+  PushUnsubscribeById,
 } = require("../dist/notifications/PushService");
 const { EmailEvaluateNotification } = require("../dist/emails/EmailService");
 const { NotificationsRoutes } = require("../dist/notifications/NotificationsRoutes");
@@ -351,6 +358,8 @@ describe("notification routes", () => {
       ["PUT", "/notifications/notification-id/read"],
       ["POST", "/push/subscribe"],
       ["DELETE", "/push/subscribe"],
+      ["GET", "/push/subscriptions"],
+      ["DELETE", "/push/subscriptions/subscription-id"],
     ];
     for (const [method, url] of unauthorizedRequests) {
       const response = await app.inject({ method, url });
@@ -485,7 +494,7 @@ describe("notification routes", () => {
     const subscribed = await app.inject({
       method: "POST",
       url: "/push/subscribe",
-      headers: { authorization: "Bearer session" },
+      headers: { authorization: "Bearer session", "user-agent": "test-agent/1.0" },
       payload: { subscription },
     });
     const unsubscribed = await app.inject({
@@ -496,10 +505,82 @@ describe("notification routes", () => {
     });
     expect(subscribed.statusCode).toBe(201);
     expect(unsubscribed.statusCode).toBe(200);
-    expect(PushSubscribe).toHaveBeenCalled();
+    expect(PushSubscribe).toHaveBeenCalledWith(
+      undefined,
+      "session-user",
+      subscription,
+      "test-agent/1.0",
+    );
     expect(PushUnsubscribe).toHaveBeenCalledWith(
       undefined,
       subscription.endpoint,
+    );
+  });
+
+  test("lists the push subscriptions of the session user", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    PushListSubscriptions.mockResolvedValueOnce([
+      {
+        id: "sub-1",
+        endpointOrigin: "https://push.example",
+        userAgent: "agent/1.0",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        endpointHash: "0123456789abcdef",
+      },
+    ]);
+    const response = await app.inject({
+      method: "GET",
+      url: "/push/subscriptions",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      subscriptions: [
+        {
+          id: "sub-1",
+          endpointOrigin: "https://push.example",
+          userAgent: "agent/1.0",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          endpointHash: "0123456789abcdef",
+        },
+      ],
+    });
+    expect(PushListSubscriptions).toHaveBeenCalledWith(
+      undefined,
+      "session-user",
+    );
+  });
+
+  test("revokes a push subscription by id and reports unknown or foreign ids", async () => {
+    AuthGetUserSession
+      .mockResolvedValueOnce({ isAuthenticated: true, userId: "session-user" })
+      .mockResolvedValueOnce({ isAuthenticated: true, userId: "session-user" });
+    PushUnsubscribeById
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    const missing = await app.inject({
+      method: "DELETE",
+      url: "/push/subscriptions/unknown-id",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(JSON.parse(missing.body).error).toContain("not found");
+
+    const revoked = await app.inject({
+      method: "DELETE",
+      url: "/push/subscriptions/sub-1",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(JSON.parse(revoked.body)).toEqual({ success: true });
+    expect(PushUnsubscribeById).toHaveBeenCalledWith(
+      undefined,
+      "session-user",
+      "sub-1",
     );
   });
 });
