@@ -57,10 +57,10 @@ describe("devices page", () => {
 
     const rows = wrapper.findAll("tbody tr");
     expect(rows).toHaveLength(2);
-    expect(rows[0].text()).toContain("https://push.example");
-    expect(rows[0].text()).toContain("agent/1.0");
-    expect(rows[1].text()).toContain("https://other.example");
-    expect(rows[1].text()).toContain("Unknown");
+    expect(rows[0]!.text()).toContain("https://push.example");
+    expect(rows[0]!.text()).toContain("agent/1.0");
+    expect(rows[1]!.text()).toContain("https://other.example");
+    expect(rows[1]!.text()).toContain("Unknown");
   });
 
   it("shows the empty state when no devices are subscribed", async () => {
