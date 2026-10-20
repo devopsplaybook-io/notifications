@@ -503,10 +503,54 @@ onUnmounted(() => {
 
 .page-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  align-items: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: var(--space-sm);
   padding: 0 var(--space-sm) var(--space-xs);
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-column: 1 / -1;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.page-actions select,
+.page-actions input[type="search"],
+.page-actions button {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 2.75rem;
+  margin: 0;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  line-height: 1.2;
+}
+
+/* Pico gives search inputs a pill radius and a padded magnifier icon;
+   neutralise the pill and align the icon with the other controls. */
+.page-actions input[type="search"] {
+  padding-inline-start: calc(var(--space-sm) + 1.5rem);
+  background-position: center left var(--space-sm);
+}
+
+.page-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  white-space: normal;
+}
+
+@media (min-width: 900px) {
+  .page-actions,
+  .filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .result-count {
@@ -530,44 +574,6 @@ onUnmounted(() => {
   color: var(--color-text-muted);
   font-size: var(--font-sm);
   padding: 0 var(--space-sm) var(--space-xs);
-}
-
-.page-actions button {
-  font-size: var(--font-sm);
-  padding: var(--space-xs) var(--space-sm);
-  margin: 0;
-  min-width: 0;
-  white-space: normal;
-}
-
-.filters {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-column: 1 / -1;
-  gap: var(--space-sm);
-  min-width: 0;
-}
-
-.page-actions select {
-  font-size: var(--font-sm);
-  padding: var(--space-xs) var(--space-sm);
-  margin: 0;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.page-actions input[type="search"] {
-  font-size: var(--font-sm);
-  padding: var(--space-xs) var(--space-sm);
-  margin: 0;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.page-actions button {
-  width: 100%;
 }
 
 #notifications-list {
