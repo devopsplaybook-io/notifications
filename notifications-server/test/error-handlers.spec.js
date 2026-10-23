@@ -100,6 +100,17 @@ describe("error handlers", () => {
       expect(apiRoute.statusCode).toBe(404);
       expect(JSON.parse(apiRoute.body)).toEqual({ error: "Not Found" });
 
+      const apiRoot = await app.inject({ method: "GET", url: "/api" });
+      expect(apiRoot.statusCode).toBe(404);
+      expect(JSON.parse(apiRoot.body)).toEqual({ error: "Not Found" });
+
+      const apiRootWithQuery = await app.inject({
+        method: "GET",
+        url: "/api?probe=1",
+      });
+      expect(apiRootWithQuery.statusCode).toBe(404);
+      expect(JSON.parse(apiRootWithQuery.body)).toEqual({ error: "Not Found" });
+
       const fileRoute = await app.inject({ method: "GET", url: "/missing.js" });
       expect(fileRoute.statusCode).toBe(404);
       expect(JSON.parse(fileRoute.body)).toEqual({ error: "Not Found" });

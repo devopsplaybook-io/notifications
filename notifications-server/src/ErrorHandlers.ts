@@ -40,10 +40,12 @@ export function RegisterErrorHandler(fastify: FastifyInstance): void {
  */
 export function RegisterNotFoundHandler(fastify: FastifyInstance): void {
   fastify.setNotFoundHandler((request, reply) => {
+    const pathname = (request.raw.url ?? "").split("?")[0];
     if (
-      request.raw.url &&
-      !request.raw.url.startsWith("/api/") &&
-      !path.extname(request.raw.url)
+      pathname !== "" &&
+      pathname !== "/api" &&
+      !pathname.startsWith("/api/") &&
+      !path.extname(pathname)
     ) {
       return reply.sendFile("index.html");
     }

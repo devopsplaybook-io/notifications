@@ -6,7 +6,7 @@
         <article>
           <label>
             Username
-            <input type="text" v-model="name" placeholder="Enter username" />
+            <input type="text" v-model="name" maxlength="100" placeholder="Enter username" />
           </label>
           <label>
             Password

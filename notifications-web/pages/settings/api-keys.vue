@@ -13,7 +13,7 @@
         <section>
           <label>
             Key Name
-            <input type="text" v-model="newTokenName" placeholder="e.g. My App" />
+            <input type="text" v-model="newTokenName" maxlength="200" placeholder="e.g. My App" />
           </label>
           <button @click="createToken" :disabled="!newTokenName">Create</button>
         </section>
