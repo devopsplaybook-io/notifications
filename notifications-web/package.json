@@ -1,4 +1,6 @@
 {
+  "name": "notifications-web",
+  "version": "0.28.0",
   "private": true,
   "scripts": {
     "build": "nuxt build",

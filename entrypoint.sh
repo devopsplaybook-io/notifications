@@ -1,9 +1,7 @@
 #!/bin/sh
 set -e
 
-if [ "${APPLICATION_TITLE}" = "" ]; then
-  APPLICATION_TITLE="Notifications"
-fi
+export APPLICATION_TITLE="${APPLICATION_TITLE:-Notifications}"
 
 node -e '
 const fs = require("fs");
