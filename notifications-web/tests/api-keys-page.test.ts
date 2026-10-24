@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { onMounted, ref } from "vue";
 
@@ -16,6 +17,7 @@ vi.mock("../services/AuthService", () => ({
 }));
 
 import axios from "axios";
+import AlertMessages from "../components/AlertMessages.vue";
 import ApiKeysPage from "../pages/settings/api-keys.vue";
 
 // Nuxt auto-imports these in the app; provide minimal fakes as globals so the
@@ -27,11 +29,16 @@ import ApiKeysPage from "../pages/settings/api-keys.vue";
   ensureAuthenticated: vi.fn().mockResolvedValue(true),
 });
 
+const mockedGet = vi.mocked(axios.get);
 const mockedPost = vi.mocked(axios.post);
+const mockedDelete = vi.mocked(axios.delete);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setActivePinia(createPinia());
+  window.confirm = vi.fn(() => true);
   mockedPost.mockReset();
+  mockedGet.mockResolvedValue({ data: { tokens: [] } });
 });
 
 async function mountAndCreateKey() {
@@ -123,5 +130,58 @@ describe("api keys page", () => {
     await flushPromises();
 
     expect(wrapper.find(".form-error").text()).toBe("Invalid token");
+  });
+
+  it("renders an alert when key creation fails", async () => {
+    const wrapper = mount(ApiKeysPage);
+    await flushPromises();
+    await wrapper.find('input[type="text"]').setValue("My App");
+    mockedPost.mockRejectedValueOnce({
+      response: { data: { error: "Invalid name" } },
+    });
+
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text() === "Create")!
+      .trigger("click");
+    await flushPromises();
+
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain("Invalid name");
+  });
+
+  it("renders an alert when key deletion fails", async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        tokens: [{ id: "token-1", name: "Old key", createdAt: "" }],
+      },
+    });
+    const wrapper = mount(ApiKeysPage);
+    await flushPromises();
+    mockedDelete.mockRejectedValueOnce({
+      response: { data: { error: "Cannot delete" } },
+    });
+
+    await wrapper.find("#api-keys-list .bi-trash-fill").trigger("click");
+    await flushPromises();
+
+    expect(window.confirm).toHaveBeenCalled();
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain("Cannot delete");
+  });
+
+  it("renders an alert when the key list fails to load", async () => {
+    mockedGet.mockRejectedValueOnce(new Error("network down"));
+
+    mount(ApiKeysPage);
+    await flushPromises();
+
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain(
+      "Failed to load API keys.",
+    );
   });
 });

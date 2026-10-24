@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { onMounted, ref } from "vue";
 
@@ -14,6 +15,7 @@ vi.mock("../services/PushService", () => ({
 }));
 
 import { PushService } from "../services/PushService";
+import AlertMessages from "../components/AlertMessages.vue";
 import DevicesPage from "../pages/settings/devices.vue";
 
 // Nuxt auto-imports these in the app; provide minimal fakes as globals so the
@@ -45,6 +47,7 @@ const DEVICES = [
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  setActivePinia(createPinia());
   window.confirm = vi.fn(() => true);
 });
 
@@ -69,6 +72,43 @@ describe("devices page", () => {
 
     expect(wrapper.find("#devices-list").exists()).toBe(false);
     expect(wrapper.text()).toContain("No push devices subscribed.");
+  });
+
+  it("shows a load error instead of the empty state", async () => {
+    vi.mocked(PushService.listSubscriptions).mockResolvedValueOnce(null);
+
+    const wrapper = mount(DevicesPage);
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("No push devices subscribed.");
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain(
+      "Failed to load push devices.",
+    );
+  });
+
+  it("keeps the current list when a refresh fails", async () => {
+    vi.mocked(PushService.listSubscriptions)
+      .mockResolvedValueOnce(DEVICES)
+      .mockResolvedValueOnce(null);
+
+    const wrapper = mount(DevicesPage);
+    await flushPromises();
+    expect(wrapper.findAll("tbody tr")).toHaveLength(2);
+
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("Refresh"))!
+      .trigger("click");
+    await flushPromises();
+
+    expect(wrapper.findAll("tbody tr")).toHaveLength(2);
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain(
+      "Failed to load push devices.",
+    );
   });
 
   it("revokes a device and reloads the list after confirmation", async () => {
@@ -96,8 +136,12 @@ describe("devices page", () => {
     await wrapper.findAll("tbody tr button")[0]!.trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Failed to revoke the device.");
     expect(PushService.listSubscriptions).toHaveBeenCalledTimes(1);
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain(
+      "Failed to revoke the device.",
+    );
   });
 
   it("marks and unsubscribes the current browser when revoking its own device", async () => {

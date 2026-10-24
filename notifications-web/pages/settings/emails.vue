@@ -162,8 +162,10 @@ import axios from "axios";
 import Config from "~~/services/Config";
 import { AuthService } from "~~/services/AuthService";
 import { formatRelativeTime } from "~/services/NotificationFormat";
+import { AlertsStore } from "~/stores/AlertsStore";
 
 const authenticationStore = AuthenticationStore();
+const alertsStore = AlertsStore();
 
 // Threshold options carry a ":threshold" suffix so a single select drives both
 // the rule severity and its severityMode.
@@ -290,6 +292,9 @@ async function saveRule() {
     loadRules();
   } catch (err) {
     console.error("Failed to save email rule", err);
+    alertsStore.showError(
+      err.response?.data?.error || "Failed to save email rule.",
+    );
   }
 }
 
@@ -335,6 +340,9 @@ async function deleteRule(id) {
     loadRules();
   } catch (err) {
     console.error("Failed to delete email rule", err);
+    alertsStore.showError(
+      err.response?.data?.error || "Failed to delete email rule.",
+    );
   }
 }
 

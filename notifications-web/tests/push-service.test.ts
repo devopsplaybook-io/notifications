@@ -170,6 +170,40 @@ describe("push service preference lifecycle", () => {
     expect(PreferencesService.isPushEnabled()).toBe(false);
   });
 
+  it("keeps push enabled when the device list fails to load", async () => {
+    PreferencesService.setPushEnabled(true);
+    fetchMock.mockResolvedValueOnce({ ok: false });
+
+    await PushService.syncIfEnabled();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe("/api/push/subscriptions");
+    expect(PreferencesService.isPushEnabled()).toBe(true);
+  });
+
+  it("keeps push enabled when the device list request throws", async () => {
+    PreferencesService.setPushEnabled(true);
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+
+    await PushService.syncIfEnabled();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(PreferencesService.isPushEnabled()).toBe(true);
+  });
+
+  it("clears the preference when a successful list is empty", async () => {
+    PreferencesService.setPushEnabled(true);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ subscriptions: [] }),
+    });
+
+    await PushService.syncIfEnabled();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(PreferencesService.isPushEnabled()).toBe(false);
+  });
+
   it("lists the session's push subscriptions", async () => {
     const entries = [
       {
@@ -192,17 +226,26 @@ describe("push service preference lifecycle", () => {
     expect(listCall[1].headers.Authorization).toBe(`Bearer ${TOKEN}`);
   });
 
-  it("returns an empty list without a session token", async () => {
+  it("returns null without a session token", async () => {
     localStorage.removeItem("auth_token");
 
-    await expect(PushService.listSubscriptions()).resolves.toEqual([]);
+    await expect(PushService.listSubscriptions()).resolves.toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("returns an empty list when the server rejects the request", async () => {
+  it("returns null when the server rejects the request", async () => {
     fetchMock.mockResolvedValueOnce({ ok: false });
 
-    await expect(PushService.listSubscriptions()).resolves.toEqual([]);
+    await expect(PushService.listSubscriptions()).resolves.toBeNull();
+  });
+
+  it("returns null for a malformed response body", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ subscriptions: "not-an-array" }),
+    });
+
+    await expect(PushService.listSubscriptions()).resolves.toBeNull();
   });
 
   it("revokes a subscription by id", async () => {

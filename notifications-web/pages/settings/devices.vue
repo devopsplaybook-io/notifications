@@ -14,7 +14,7 @@
 
       <p v-if="loading" class="devices-loading">Loading devices…</p>
 
-      <div v-else-if="devices.length === 0" class="empty-state">
+      <div v-else-if="devices.length === 0 && !loadFailed" class="empty-state">
         <i class="bi bi-bell-slash"></i>
         <p>No push devices subscribed.</p>
       </div>
@@ -69,7 +69,6 @@
       >
         <i class="bi bi-arrow-clockwise"></i> Refresh
       </button>
-      <p v-if="error" class="form-error">{{ error }}</p>
     </div>
   </div>
 </template>
@@ -80,11 +79,13 @@ import {
   formatRelativeTime,
 } from "~/services/NotificationFormat";
 import { PushService } from "~/services/PushService";
+import { AlertsStore } from "~/stores/AlertsStore";
 
 const authenticationStore = AuthenticationStore();
+const alertsStore = AlertsStore();
 const devices = ref([]);
 const loading = ref(false);
-const error = ref("");
+const loadFailed = ref(false);
 const localHash = ref("");
 const revokingId = ref("");
 
@@ -104,12 +105,22 @@ function isThisDevice(device) {
 }
 
 async function loadDevices() {
+  loadFailed.value = false;
   loading.value = true;
-  error.value = "";
   try {
-    devices.value = await PushService.listSubscriptions();
+    const list = await PushService.listSubscriptions();
+    if (list === null) {
+      // Keep any previously loaded list: a failed refresh is not an empty
+      // account.
+      loadFailed.value = true;
+      alertsStore.showError("Failed to load push devices.");
+      return;
+    }
+    devices.value = list;
   } catch (err) {
-    error.value = "Failed to load push devices.";
+    console.error("Failed to load push devices", err);
+    loadFailed.value = true;
+    alertsStore.showError("Failed to load push devices.");
   } finally {
     loading.value = false;
   }
@@ -137,7 +148,6 @@ async function revoke(device) {
     return;
   }
   revokingId.value = device.id;
-  error.value = "";
   try {
     if (await PushService.revokeSubscription(device.id)) {
       if (isThisDevice(device)) {
@@ -145,8 +155,11 @@ async function revoke(device) {
       }
       await loadDevices();
     } else {
-      error.value = "Failed to revoke the device.";
+      alertsStore.showError("Failed to revoke the device.");
     }
+  } catch (err) {
+    console.error("Failed to revoke the device", err);
+    alertsStore.showError("Failed to revoke the device.");
   } finally {
     revokingId.value = "";
   }
@@ -190,10 +203,6 @@ onMounted(async () => {
 
 .actions {
   text-align: right;
-}
-
-.form-error {
-  color: var(--color-danger);
 }
 
 .devices-loading {

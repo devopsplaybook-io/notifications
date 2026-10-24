@@ -5,13 +5,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../services/Config", () => ({
   default: { get: vi.fn().mockResolvedValue({ SERVER_URL: "/api" }) },
 }));
-vi.mock("../services/AuthService", () => ({
-  AuthService: {
-    isAuthenticated: vi.fn().mockResolvedValue(false),
-    getAuthHeader: vi.fn().mockResolvedValue({ headers: {} }),
-    saveToken: vi.fn().mockResolvedValue(undefined),
-  },
-}));
 
 import Navigation from "../components/Navigation.vue";
 
