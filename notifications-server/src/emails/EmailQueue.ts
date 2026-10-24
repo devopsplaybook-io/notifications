@@ -260,18 +260,59 @@ async function deliverNext(): Promise<void> {
   }
 }
 
-function sendWithTimeout(message: nodemailer.SendMailOptions): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Email send timed out after ${EmailQueueSettings.sendTimeoutMs}ms`)),
-      EmailQueueSettings.sendTimeoutMs,
+export class EmailSendTimeoutError extends Error {
+  public code: string;
+
+  constructor(timeoutMs: number) {
+    super(`Email send timed out after ${timeoutMs}ms`);
+    this.name = "EmailSendTimeoutError";
+    this.code = "ETIMEDOUT";
+  }
+}
+
+/** True for our watchdog and for nodemailer's connect/greeting/socket timeouts. */
+export function IsEmailTimeoutError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "ETIMEDOUT"
+  );
+}
+
+/**
+ * Send one message with a hard budget. On timeout the outcome is a failure.
+ * With `waitForSettleOnTimeout` (queue) the rejection is delayed until the
+ * underlying send settles, so a timed-out send is never overlapped by the
+ * next job.
+ */
+export async function SendMailBounded(
+  transporter: nodemailer.Transporter,
+  message: nodemailer.SendMailOptions,
+  timeoutMs: number,
+  waitForSettleOnTimeout: boolean,
+): Promise<void> {
+  // The executor runs synchronously (so a synchronous sendMail throw becomes a
+  // rejection) while the send itself keeps running in the background.
+  const sendPromise = new Promise<void>((resolve, reject) => {
+    transporter.sendMail(message).then(
+      () => resolve(),
+      (error) => reject(toError(error)),
     );
-    transport
-      .sendMail(message)
-      .then(() => resolve())
-      .catch((error) => reject(toError(error)))
-      .finally(() => clearTimeout(timer));
   });
+  let timer: NodeJS.Timeout | undefined;
+  const watchdog = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new EmailSendTimeoutError(timeoutMs)), timeoutMs);
+  });
+  try {
+    await Promise.race([sendPromise, watchdog]);
+  } catch (error) {
+    if (waitForSettleOnTimeout && error instanceof EmailSendTimeoutError) {
+      await sendPromise.catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function deliverEmail(job: EmailJob): Promise<void> {
@@ -292,7 +333,12 @@ async function deliverEmail(job: EmailJob): Promise<void> {
         await delay(EmailQueueSettings.retryBaseDelayMs * 2 ** (attempt - 2));
       }
       try {
-        await sendWithTimeout(message);
+        await SendMailBounded(
+          transport,
+          message,
+          EmailQueueSettings.sendTimeoutMs,
+          true,
+        );
         recordDelivery(job, "sent", attempt);
         return;
       } catch (error) {
@@ -301,6 +347,13 @@ async function deliverEmail(job: EmailJob): Promise<void> {
           `Email delivery failed for ${MaskRecipient(job.recipient)} (attempt ${attempt}/${EmailQueueSettings.maxAttempts}): ${error}`,
           span,
         );
+        if (IsEmailTimeoutError(error)) {
+          // Ambiguous: the server may already have accepted the message, so
+          // retrying would duplicate it. The failure is terminal.
+          countEmailFailure();
+          recordDelivery(job, "failed", attempt, lastError);
+          return;
+        }
         if (attempt === EmailQueueSettings.maxAttempts) {
           countEmailFailure();
         }
@@ -325,6 +378,6 @@ export function CreateTransportFromConfig(config: Config): nodemailer.Transporte
       : undefined,
     connectionTimeout: EmailQueueSettings.sendTimeoutMs,
     greetingTimeout: EmailQueueSettings.sendTimeoutMs,
-    socketTimeout: EmailQueueSettings.sendTimeoutMs * 2,
+    socketTimeout: EmailQueueSettings.sendTimeoutMs,
   });
 }

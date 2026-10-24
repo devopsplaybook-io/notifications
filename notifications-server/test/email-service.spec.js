@@ -1,4 +1,5 @@
 jest.mock("../dist/emails/EmailQueue", () => ({
+  ...jest.requireActual("../dist/emails/EmailQueue"),
   EmailQueueEnqueue: jest.fn(),
   EmailQueueSetTransport: jest.fn(),
   CreateTransportFromConfig: jest.fn(),
@@ -21,7 +22,12 @@ jest.mock("../dist/OTelContext", () => ({
   }),
 }));
 
-const { EmailQueueEnqueue, CreateTransportFromConfig, BuildEmailMessage } = require("../dist/emails/EmailQueue");
+const {
+  EmailQueueEnqueue,
+  EmailQueueSettings,
+  CreateTransportFromConfig,
+  BuildEmailMessage,
+} = require("../dist/emails/EmailQueue");
 const { EmailDeliveriesRecord } = require("../dist/emails/EmailDeliveriesData");
 const { EmailRulesMatching } = require("../dist/emails/EmailRulesData");
 const {
@@ -130,6 +136,33 @@ describe("email service", () => {
         error: "Error: smtp down",
       }),
     );
+  });
+
+  test("bounds the test email with the send timeout", async () => {
+    const originalTimeout = EmailQueueSettings.sendTimeoutMs;
+    jest.useFakeTimers();
+    try {
+      EmailQueueSettings.sendTimeoutMs = 50;
+      const sendMail = jest.fn(() => new Promise(() => {})); // never settles
+      CreateTransportFromConfig.mockReturnValueOnce({ sendMail });
+      const promise = EmailSendTest(undefined, "user@example.com");
+      const rejection = expect(promise).rejects.toThrow("timed out after 50ms");
+      await jest.advanceTimersByTimeAsync(50);
+      await rejection;
+
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          status: "failed",
+          attempts: 1,
+          error: expect.stringContaining("timed out after 50ms"),
+        }),
+      );
+    } finally {
+      EmailQueueSettings.sendTimeoutMs = originalTimeout;
+      jest.useRealTimers();
+    }
   });
 
   test("throws when sending a test email without a transport", async () => {

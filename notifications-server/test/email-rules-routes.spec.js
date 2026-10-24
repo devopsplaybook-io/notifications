@@ -55,10 +55,10 @@ const { EmailIsConfigured, EmailSendTest } = require("../dist/emails/EmailServic
 const { EmailRulesRoutes } = require("../dist/emails/EmailRulesRoutes");
 const { IsValidEmailRecipient } = require("../dist/emails/EmailRulesRoutes");
 
-function anAuthenticatedUser() {
+function anAuthenticatedUser(userId = "admin") {
   AuthGetUserSession.mockResolvedValueOnce({
     isAuthenticated: true,
-    userId: "admin",
+    userId,
   });
 }
 
@@ -346,6 +346,23 @@ describe("email rules routes", () => {
       expect.any(Error),
       undefined,
     );
+  });
+
+  test("rate limits the test email endpoint per user", async () => {
+    EmailIsConfigured.mockReturnValue(true);
+    const statuses = [];
+    for (let i = 0; i < 6; i += 1) {
+      anAuthenticatedUser("rate-limit-user");
+      const response = await app.inject({
+        method: "POST",
+        url: "/emails/test",
+        payload: { recipient: "user@example.com" },
+      });
+      statuses.push(response.statusCode);
+    }
+
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
+    expect(EmailSendTest).toHaveBeenCalledTimes(5);
   });
 
   test("rejects recipients outside the simple address shape", () => {
