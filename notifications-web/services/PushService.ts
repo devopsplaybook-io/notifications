@@ -94,7 +94,9 @@ export class PushService {
    * previously enabled push (e.g. the session was recreated). Never prompts
    * and never creates a browser subscription. A subscription revoked remotely
    * (Settings → Devices) is not resurrected: the local preference is cleared
-   * instead, so push must be re-enabled manually.
+   * instead, so push must be re-enabled manually. When the device list cannot
+   * be fetched, the preference is kept and nothing is re-saved, so a later
+   * load can re-sync (a transient failure must not disable push).
    */
   public static async syncIfEnabled(): Promise<void> {
     if (!PreferencesService.isPushEnabled()) {
@@ -117,6 +119,15 @@ export class PushService {
       );
       if (endpointHash) {
         const known = await PushService.listSubscriptions();
+        if (known === null) {
+          // Cannot prove the device was revoked remotely: keep the preference
+          // and do not re-save, so a later load can re-sync. Re-saving here
+          // would resurrect a device revoked elsewhere.
+          console.warn(
+            "Could not verify the push subscription; keeping push enabled",
+          );
+          return;
+        }
         if (!known.some((entry) => entry.endpointHash === endpointHash)) {
           console.info("Push subscription was revoked remotely");
           PreferencesService.setPushEnabled(false);
@@ -152,23 +163,36 @@ export class PushService {
     }
   }
 
-  /** List the push devices of the current session (origin/UA/date only). */
-  public static async listSubscriptions(): Promise<PushSubscriptionInfo[]> {
-    const config = await Config.get();
-    const token = localStorage.getItem("auth_token");
-    if (!token) {
-      console.error("No auth token for push subscription list");
-      return [];
+  /** List the push devices of the current session (origin/UA/date only).
+   * Returns null when the list cannot be fetched, so callers can tell a failed
+   * request from an account without devices. */
+  public static async listSubscriptions(): Promise<
+    PushSubscriptionInfo[] | null
+  > {
+    try {
+      const config = await Config.get();
+      const token = localStorage.getItem("auth_token");
+      if (!token) {
+        console.error("No auth token for push subscription list");
+        return null;
+      }
+      const response = await fetch(`${config.SERVER_URL}/push/subscriptions`, {
+        headers: { Authorization: ["Bearer", token].join(" ") },
+      });
+      if (!response.ok) {
+        console.error("Failed to list push subscriptions");
+        return null;
+      }
+      const body = await response.json();
+      if (!Array.isArray(body?.subscriptions)) {
+        console.error("Malformed push subscription list");
+        return null;
+      }
+      return body.subscriptions;
+    } catch (error) {
+      console.error("Failed to list push subscriptions", error);
+      return null;
     }
-    const response = await fetch(`${config.SERVER_URL}/push/subscriptions`, {
-      headers: { Authorization: ["Bearer", token].join(" ") },
-    });
-    if (!response.ok) {
-      console.error("Failed to list push subscriptions");
-      return [];
-    }
-    const body = await response.json();
-    return Array.isArray(body?.subscriptions) ? body.subscriptions : [];
   }
 
   /** Revoke a push device by id (e.g. a lost browser). */

@@ -77,8 +77,10 @@
 import axios from "axios";
 import Config from "~~/services/Config";
 import { AuthService } from "~~/services/AuthService";
+import { AlertsStore } from "~/stores/AlertsStore";
 
 const authenticationStore = AuthenticationStore();
+const alertsStore = AlertsStore();
 
 const tokens = ref([]);
 const newTokenName = ref("");
@@ -156,6 +158,9 @@ async function loadTokens() {
     tokens.value = res.data.tokens;
   } catch (err) {
     console.error("Failed to load API keys", err);
+    alertsStore.showError(
+      err.response?.data?.error || "Failed to load API keys.",
+    );
   }
 }
 
@@ -177,6 +182,9 @@ async function createToken() {
     loadTokens();
   } catch (err) {
     console.error("Failed to create API key", err);
+    alertsStore.showError(
+      err.response?.data?.error || "Failed to create API key.",
+    );
   }
 }
 
@@ -197,6 +205,9 @@ async function deleteToken(id) {
     loadTokens();
   } catch (err) {
     console.error("Failed to delete API key", err);
+    alertsStore.showError(
+      err.response?.data?.error || "Failed to delete API key.",
+    );
   }
 }
 

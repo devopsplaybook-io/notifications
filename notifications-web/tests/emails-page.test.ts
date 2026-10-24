@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { onMounted, ref } from "vue";
 
@@ -16,6 +17,7 @@ vi.mock("../services/AuthService", () => ({
 }));
 
 import axios from "axios";
+import AlertMessages from "../components/AlertMessages.vue";
 import EmailsPage from "../pages/settings/emails.vue";
 
 // Nuxt auto-imports these in the app; provide minimal fakes as globals so the
@@ -30,6 +32,7 @@ import EmailsPage from "../pages/settings/emails.vue";
 const mockedGet = vi.mocked(axios.get);
 const mockedPost = vi.mocked(axios.post);
 const mockedPut = vi.mocked(axios.put);
+const mockedDelete = vi.mocked(axios.delete);
 
 const RULES = [
   {
@@ -95,6 +98,8 @@ async function mountPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setActivePinia(createPinia());
+  window.confirm = vi.fn(() => true);
   mockPageData();
 });
 
@@ -213,5 +218,57 @@ describe("emails page", () => {
     expect(wrapper.find("#email-deliveries .form-error").text()).toBe(
       "Access Denied",
     );
+  });
+
+  it("renders an alert when saving a rule fails", async () => {
+    const wrapper = await mountPage();
+    mockedPost.mockRejectedValueOnce({
+      response: { data: { error: "Invalid recipient" } },
+    });
+
+    await wrapper.find('input[type="email"]').setValue("user@example.com");
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text() === "Add")!
+      .trigger("click");
+    await flushPromises();
+
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain("Invalid recipient");
+    expect(
+      (wrapper.find('input[type="email"]').element as HTMLInputElement).value,
+    ).toBe("user@example.com");
+  });
+
+  it("renders an alert when deleting a rule fails", async () => {
+    const wrapper = await mountPage();
+    mockedDelete.mockRejectedValueOnce(new Error("network down"));
+
+    await wrapper.find("#email-rules-list .bi-trash-fill").trigger("click");
+    await flushPromises();
+
+    expect(window.confirm).toHaveBeenCalled();
+    const alerts = mount(AlertMessages);
+    await flushPromises();
+    expect(alerts.find('[role="alert"]').text()).toContain(
+      "Failed to delete email rule.",
+    );
+  });
+
+  it("shows the server error when the test email fails", async () => {
+    const wrapper = await mountPage();
+    mockedPost.mockRejectedValueOnce({
+      response: { data: { error: "SMTP down" } },
+    });
+
+    await wrapper.find("#test-email input[type='email']").setValue("user@example.com");
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text() === "Send Test")!
+      .trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("#test-email .form-error").text()).toBe("SMTP down");
   });
 });

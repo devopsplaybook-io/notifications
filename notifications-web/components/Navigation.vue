@@ -39,9 +39,6 @@
 </template>
 
 <script lang="ts">
-import axios from "axios";
-import Config from "~~/services/Config.ts";
-import { AuthService } from "~~/services/AuthService";
 import { PreferencesService } from "~/services/PreferencesService";
 
 export default {
@@ -68,17 +65,6 @@ export default {
           NotificationsStore().loadUnreadCount();
         }
       }, 60000);
-      setTimeout(async () => {
-        axios
-          .post(
-            `${(await Config.get()).SERVER_URL}/users/session`,
-            {},
-            await AuthService.getAuthHeader(),
-          )
-          .then((res) => {
-            AuthService.saveToken(res.data.token);
-          });
-      }, 10000);
     }
     PreferencesService.applyTheme();
   },
