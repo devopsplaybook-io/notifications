@@ -11,7 +11,7 @@ import Fastify from "fastify";
 import { watchFile } from "fs-extra";
 import { rename } from "fs/promises";
 import * as path from "path";
-import { Config } from "./Config";
+import { Config, ParseTrustedProxies } from "./Config";
 import {
   OTelLogger,
   OTelSetMeter,
@@ -31,6 +31,7 @@ import { ApiTokensRoutes } from "./apitokens/ApiTokensRoutes";
 import { ApiTokensMigrateToHashed } from "./apitokens/ApiTokensData";
 import { PushInit } from "./notifications/PushService";
 import { PushRoutes } from "./notifications/PushRoutes";
+import { NotificationIngestRateLimitInit } from "./notifications/IngestRateLimit";
 import { EmailInit } from "./emails/EmailService";
 import { EmailRulesRoutes } from "./emails/EmailRulesRoutes";
 import { EmailDeliveriesPrune } from "./emails/EmailDeliveriesData";
@@ -83,6 +84,7 @@ Promise.resolve().then(async () => {
   await ApiTokensMigrateToHashed(span);
   PushInit(config);
   EmailInit(config);
+  NotificationIngestRateLimitInit(config);
 
   span.end();
 
@@ -128,7 +130,7 @@ Promise.resolve().then(async () => {
 
   const fastify = Fastify({
     bodyLimit: 1024 * 1024,
-    trustProxy: ["loopback", "linklocal", "uniquelocal"],
+    trustProxy: ParseTrustedProxies(config.TRUSTED_PROXIES),
   });
 
   fastify.addHook("onSend", async (_request, reply) => {

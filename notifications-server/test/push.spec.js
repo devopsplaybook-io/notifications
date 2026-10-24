@@ -4,6 +4,7 @@ jest.mock("web-push", () => ({
   sendNotification: jest.fn(),
 }));
 jest.mock("@devopsplaybook.io/common-utils", () => ({
+  ConfigBase: class {},
   DbUtilsExecSQL: jest.fn().mockResolvedValue(1),
   DbUtilsQuerySQL: jest.fn(),
 }));
@@ -30,6 +31,7 @@ const {
   PushInit,
   PushSendToAll,
   PushSubscribe,
+  PushIsValidEndpoint,
   PushListSubscriptions,
   PushUnsubscribe,
   PushUnsubscribeById,
@@ -79,7 +81,7 @@ describe("push service", () => {
     expect(PushQueueEnqueue).not.toHaveBeenCalled();
   });
 
-  test("subscribes with an atomic upsert so concurrent calls keep one row", async () => {
+  test("keeps one row for concurrent same-user subscribes", async () => {
     const database = createDatabase();
     DbUtilsExecSQL.mockImplementation(async (_span, sql, params) => {
       expect(sql).toContain("ON CONFLICT(endpoint) DO UPDATE");
@@ -95,27 +97,50 @@ describe("push service", () => {
       endpoint,
       keys: { p256dh: "key-b", auth: "auth-b" },
     };
-    await Promise.all([
-      PushSubscribe(undefined, "user-a", first, "agent-a"),
-      PushSubscribe(undefined, "user-b", second, "agent-b"),
-    ]);
+    await expect(
+      Promise.all([
+        PushSubscribe(undefined, "user-a", first, "agent-a"),
+        PushSubscribe(undefined, "user-a", second, "agent-a"),
+      ]),
+    ).resolves.toEqual([true, true]);
 
     const rows = database
       .prepare("SELECT * FROM push_subscriptions WHERE endpoint = ?")
       .all(endpoint);
     expect(rows).toHaveLength(1);
-    expect(["user-a", "user-b"]).toContain(rows[0].userId);
-    expect([first, second].map((sub) => JSON.stringify(sub))).toContain(
-      rows[0].subscription,
+    expect(rows[0].userId).toBe("user-a");
+    database.close();
+  });
+
+  test("rejects a cross-user endpoint takeover without touching the owner", async () => {
+    const database = createDatabase();
+    DbUtilsExecSQL.mockImplementation(async (_span, sql, params) =>
+      database.prepare(sql).run(...params).changes,
     );
 
-    await PushSubscribe(undefined, "user-a", second, "agent-b");
-    const updated = database
+    const endpoint = "https://push.example/subscription";
+    const first = {
+      endpoint,
+      keys: { p256dh: "key-a", auth: "auth-a" },
+    };
+    const second = {
+      endpoint,
+      keys: { p256dh: "key-b", auth: "auth-b" },
+    };
+    await expect(
+      PushSubscribe(undefined, "user-a", first, "agent-a"),
+    ).resolves.toBe(true);
+    await expect(
+      PushSubscribe(undefined, "user-b", second, "agent-b"),
+    ).resolves.toBe(false);
+
+    const rows = database
       .prepare("SELECT * FROM push_subscriptions WHERE endpoint = ?")
       .all(endpoint);
-    expect(updated).toHaveLength(1);
-    expect(updated[0].userId).toBe("user-a");
-    expect(updated[0].subscription).toBe(JSON.stringify(second));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].userId).toBe("user-a");
+    expect(rows[0].subscription).toBe(JSON.stringify(first));
+    expect(rows[0].userAgent).toBe("agent-a");
     database.close();
   });
 
@@ -130,14 +155,18 @@ describe("push service", () => {
       endpoint,
       keys: { p256dh: "key-a", auth: "auth-a" },
     };
-    await PushSubscribe(undefined, "user-a", subscription, "agent-first");
+    await expect(
+      PushSubscribe(undefined, "user-a", subscription, "agent-first"),
+    ).resolves.toBe(true);
     const firstRow = database
       .prepare("SELECT * FROM push_subscriptions WHERE endpoint = ?")
       .get(endpoint);
     expect(firstRow.userAgent).toBe("agent-first");
     expect(firstRow.createdAt).not.toBe("");
 
-    await PushSubscribe(undefined, "user-a", subscription, "agent-second");
+    await expect(
+      PushSubscribe(undefined, "user-a", subscription, "agent-second"),
+    ).resolves.toBe(true);
     const secondRow = database
       .prepare("SELECT * FROM push_subscriptions WHERE endpoint = ?")
       .get(endpoint);
@@ -196,13 +225,37 @@ describe("push service", () => {
     database.close();
   });
 
-  test("unsubscribes by endpoint", async () => {
-    await PushUnsubscribe(undefined, "https://push.example/subscription");
-    expect(DbUtilsExecSQL).toHaveBeenCalledWith(
-      expect.anything(),
-      "DELETE FROM push_subscriptions WHERE endpoint = ?",
-      ["https://push.example/subscription"],
-    );
+  test("unsubscribes by endpoint scoped to the owner", async () => {
+    const database = createDatabase();
+    DbUtilsExecSQL.mockImplementation(async (_span, sql, params) => {
+      expect(sql).toContain('AND "userId" = ?');
+      return database.prepare(sql).run(...params).changes;
+    });
+    const endpoint = "https://push.example/subscription";
+    database
+      .prepare(
+        'INSERT INTO push_subscriptions (id, "userId", endpoint, subscription, userAgent, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run("sub-1", "user-a", endpoint, "{}", "", "");
+
+    await expect(
+      PushUnsubscribe(undefined, "user-b", endpoint),
+    ).resolves.toBe(false);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM push_subscriptions")
+        .get().count,
+    ).toBe(1);
+
+    await expect(
+      PushUnsubscribe(undefined, "user-a", endpoint),
+    ).resolves.toBe(true);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM push_subscriptions")
+        .get().count,
+    ).toBe(0);
+    database.close();
   });
 
   test("unsubscribes by id scoped to the owner and reports missing deletes", async () => {
@@ -244,5 +297,60 @@ describe("push service", () => {
     expect(PushNormalizeUserAgent(undefined)).toBe("");
     expect(PushNormalizeUserAgent(42)).toBe("");
     expect(PushNormalizeUserAgent("a".repeat(600))).toHaveLength(500);
+  });
+
+  test("accepts only https endpoints on allowlisted push service hosts", () => {
+    const accepted = [
+      "https://fcm.googleapis.com/wp/registration-token",
+      "https://updates.push.services.mozilla.com/wpush/v2/token",
+      "https://wns2-par02p.notify.windows.com/w/?token=abc",
+      "https://web.push.apple.com/QGVsbG8",
+      "https://sub.push.apple.com/path",
+    ];
+    for (const endpoint of accepted) {
+      expect({ endpoint, valid: PushIsValidEndpoint(endpoint) }).toEqual({
+        endpoint,
+        valid: true,
+      });
+    }
+
+    const rejected = [
+      "https://push.example/subscription",
+      "https://127.0.0.1/push",
+      "https://[::1]/push",
+      "https://2130706433/push",
+      "https://localhost/push",
+      "https://fcm.googleapis.com.evil.example/push",
+      "https://evil.example/fcm.googleapis.com",
+      "http://fcm.googleapis.com/push",
+      "https://user:pass@fcm.googleapis.com/push",
+      "not-a-url",
+    ];
+    for (const endpoint of rejected) {
+      expect({ endpoint, valid: PushIsValidEndpoint(endpoint) }).toEqual({
+        endpoint,
+        valid: false,
+      });
+    }
+  });
+
+  test("honours a custom push host allowlist", () => {
+    PushInit({ PUSH_ALLOWED_HOSTS: "push.example,*.example.net" });
+    try {
+      expect(PushIsValidEndpoint("https://push.example/subscription")).toBe(
+        true,
+      );
+      expect(PushIsValidEndpoint("https://a.example.net/subscription")).toBe(
+        true,
+      );
+      expect(PushIsValidEndpoint("https://example.net/subscription")).toBe(
+        false,
+      );
+      expect(PushIsValidEndpoint("https://fcm.googleapis.com/wp/token")).toBe(
+        false,
+      );
+    } finally {
+      PushInit({});
+    }
   });
 });

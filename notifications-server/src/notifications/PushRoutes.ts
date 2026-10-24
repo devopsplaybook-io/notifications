@@ -31,12 +31,17 @@ export class PushRoutes {
       if (!PushIsValidSubscription(request.body?.subscription)) {
         return reply.status(400).send({ error: "Invalid: subscription" });
       }
-      await PushSubscribe(
+      const subscribed = await PushSubscribe(
         OTelRequestSpan(request),
         userSession.userId,
         request.body.subscription,
         PushNormalizeUserAgent(request.headers["user-agent"]),
       );
+      if (!subscribed) {
+        return reply
+          .status(409)
+          .send({ error: "Push subscription belongs to another user" });
+      }
       return reply.status(201).send({ success: true });
     });
 
@@ -55,6 +60,7 @@ export class PushRoutes {
       }
       await PushUnsubscribe(
         OTelRequestSpan(request),
+        userSession.userId,
         request.body.endpoint,
       );
       return reply.status(200).send({ success: true });

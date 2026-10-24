@@ -17,6 +17,7 @@ import { ApiTokensValidate } from "../apitokens/ApiTokensData";
 import { Notification } from "../model/Notification";
 import { PushSendToAll } from "./PushService";
 import { EmailEvaluateNotification } from "../emails/EmailService";
+import { NotificationIngestRateLimit } from "./IngestRateLimit";
 
 const logger = OTelLogger().createModuleLogger("NotificationsRoutes");
 const toError = (error: unknown): Error =>
@@ -192,6 +193,12 @@ export class NotificationsRoutes {
       const isValid = await ApiTokensValidate(OTelRequestSpan(req), token);
       if (!isValid) {
         return res.status(401).send({ error: "Invalid API token" });
+      }
+      if (!NotificationIngestRateLimit(token)) {
+        return res
+          .header("Retry-After", "60")
+          .status(429)
+          .send({ error: "Too many notifications" });
       }
 
       const body = req.body;

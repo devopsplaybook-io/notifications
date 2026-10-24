@@ -1,9 +1,10 @@
 import * as webpush from "web-push";
 import { createHash } from "crypto";
+import { isIP } from "net";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { DbUtilsExecSQL, DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
 import { OTelTracer } from "../OTelContext";
-import { Config } from "../Config";
+import { Config, DEFAULT_PUSH_ALLOWED_HOSTS } from "../Config";
 import { Notification } from "../model/Notification";
 import { PushQueueEnqueue } from "../push/PushQueue";
 
@@ -36,21 +37,60 @@ export function PushIsValidSubscription(
   }
 }
 
+function PushIsAllowedHost(hostname: string): boolean {
+  const configured = config?.PUSH_ALLOWED_HOSTS ?? DEFAULT_PUSH_ALLOWED_HOSTS;
+  const allowedHosts = configured
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry !== "");
+  return allowedHosts.some((entry) => {
+    if (entry.startsWith("*.")) {
+      const suffix = entry.slice(1);
+      return hostname.endsWith(suffix) && hostname.length > suffix.length;
+    }
+    return hostname === entry;
+  });
+}
+
 export function PushIsValidEndpoint(endpoint: unknown): endpoint is string {
   if (typeof endpoint !== "string" || endpoint.length > 2000) {
     return false;
   }
+  let parsed: URL;
   try {
-    const parsed = new URL(endpoint);
-    return (
-      parsed.protocol === "https:" &&
-      !parsed.username &&
-      !parsed.password &&
-      parsed.hostname !== ""
-    );
+    parsed = new URL(endpoint);
   } catch {
     return false;
   }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username !== "" ||
+    parsed.password !== ""
+  ) {
+    return false;
+  }
+  if (parsed.hostname === "") {
+    return false;
+  }
+  let hostname = parsed.hostname.toLowerCase();
+  if (hostname.endsWith(".")) {
+    hostname = hostname.slice(0, -1);
+  }
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    hostname = hostname.slice(1, -1);
+  }
+  if (hostname === "") {
+    return false;
+  }
+  // Reject localhost and IP literals (the WHATWG parser normalises forms such
+  // as 2130706433 and [::1]) before the allowlist match.
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    return false;
+  }
+  if (isIP(hostname) !== 0) {
+    return false;
+  }
+  return PushIsAllowedHost(hostname);
 }
 
 export function PushInit(configIn: Config) {
@@ -105,16 +145,18 @@ export async function PushSubscribe(
   userId: string,
   subscription: Record<string, unknown>,
   userAgent: string,
-): Promise<void> {
+): Promise<boolean> {
   const span = OTelTracer().startSpan("PushSubscribe", context);
   try {
-    // Atomic upsert: the UNIQUE constraint on endpoint (migration 0005) keeps a
-    // single row per endpoint under concurrent subscribes. createdAt keeps the
-    // first-seen value on conflict; subscription, userId and userAgent refresh.
-    await DbUtilsExecSQL(
+    // Atomic upsert scoped to the endpoint owner: the UNIQUE constraint on
+    // endpoint (migration 0005) keeps a single row per endpoint and the WHERE
+    // clause refuses to reassign an endpoint owned by another user (changes =
+    // 0). A same-owner resubscribe refreshes subscription/userAgent and keeps
+    // the first-seen createdAt.
+    const changes = await DbUtilsExecSQL(
       span,
       'INSERT INTO push_subscriptions ("userId", endpoint, subscription, userAgent, createdAt) VALUES (?, ?, ?, ?, ?) ' +
-        'ON CONFLICT(endpoint) DO UPDATE SET subscription = excluded.subscription, "userId" = excluded."userId", userAgent = excluded.userAgent',
+        'ON CONFLICT(endpoint) DO UPDATE SET subscription = excluded.subscription, userAgent = excluded.userAgent WHERE "userId" = excluded."userId"',
       [
         userId,
         subscription.endpoint,
@@ -123,6 +165,7 @@ export async function PushSubscribe(
         new Date().toISOString(),
       ],
     );
+    return changes > 0;
   } finally {
     span.end();
   }
@@ -153,15 +196,17 @@ export async function PushListSubscriptions(
 
 export async function PushUnsubscribe(
   context: Span,
+  userId: string,
   endpoint: string,
-): Promise<void> {
+): Promise<boolean> {
   const span = OTelTracer().startSpan("PushUnsubscribe", context);
   try {
-    await DbUtilsExecSQL(
+    const changes = await DbUtilsExecSQL(
       span,
-      "DELETE FROM push_subscriptions WHERE endpoint = ?",
-      [endpoint],
+      'DELETE FROM push_subscriptions WHERE endpoint = ? AND "userId" = ?',
+      [endpoint, userId],
     );
+    return changes > 0;
   } finally {
     span.end();
   }

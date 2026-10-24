@@ -10,9 +10,16 @@
           </label>
           <label>
             Password
-            <input type="password" v-model="password" placeholder="Enter password" />
+            <input
+              type="password"
+              v-model="password"
+              minlength="12"
+              autocomplete="new-password"
+              placeholder="Enter password"
+            />
+            <small>At least 12 characters</small>
           </label>
-          <button @click="createUser" :disabled="!name || !password">Create</button>
+          <button @click="createUser" :disabled="!name || password.length < 12">Create</button>
           <p v-if="error" class="form-error">{{ error }}</p>
         </article>
       </div>
@@ -44,9 +51,19 @@
           </label>
           <label>
             New Password
-            <input type="password" v-model="newPassword" placeholder="Enter new password" />
+            <input
+              type="password"
+              v-model="newPassword"
+              minlength="12"
+              autocomplete="new-password"
+              placeholder="Enter new password"
+            />
+            <small>At least 12 characters</small>
           </label>
-          <button @click="changePassword" :disabled="!passwordOld || !newPassword">
+          <button
+            @click="changePassword"
+            :disabled="!passwordOld || newPassword.length < 12"
+          >
             Update Password
           </button>
           <p v-if="passwordError" class="form-error">{{ passwordError }}</p>
