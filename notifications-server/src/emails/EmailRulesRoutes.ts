@@ -22,6 +22,25 @@ const RECIPIENT_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SOURCE_MAX_LENGTH = 200;
 const SEVERITY_MAX_LENGTH = 20;
 
+const TEST_EMAIL_RATE_LIMIT_WINDOW_MS = 60_000;
+const TEST_EMAIL_RATE_LIMIT_MAX = 5;
+const testEmailAttempts = new Map<string, number[]>();
+
+/** Test emails perform a real SMTP send: cap them per authenticated user. */
+export function TestEmailRateLimit(userId: string | null, now = Date.now()): boolean {
+  const key = userId || "anonymous";
+  const attempts = (testEmailAttempts.get(key) || []).filter(
+    (timestamp) => now - timestamp < TEST_EMAIL_RATE_LIMIT_WINDOW_MS,
+  );
+  if (attempts.length >= TEST_EMAIL_RATE_LIMIT_MAX) {
+    testEmailAttempts.set(key, attempts);
+    return false;
+  }
+  attempts.push(now);
+  testEmailAttempts.set(key, attempts);
+  return true;
+}
+
 /**
  * A recipient must be a plain address (no display name): anything outside the
  * simple address shape — including CR/LF, which would enable SMTP header
@@ -239,6 +258,9 @@ export class EmailRulesRoutes {
       }
       if (!EmailIsConfigured()) {
         return res.status(400).send({ error: "Email not configured" });
+      }
+      if (!TestEmailRateLimit(userSession.userId)) {
+        return res.status(429).send({ error: "Too many test emails, try again later" });
       }
       try {
         await EmailSendTest(OTelRequestSpan(req), req.body.recipient);

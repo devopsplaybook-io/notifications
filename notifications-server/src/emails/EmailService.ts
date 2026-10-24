@@ -7,6 +7,8 @@ import {
   CreateTransportFromConfig,
   EmailQueueEnqueue,
   EmailQueueSetTransport,
+  EmailQueueSettings,
+  SendMailBounded,
 } from "./EmailQueue";
 import { EmailDeliveriesRecord } from "./EmailDeliveriesData";
 import { EmailRulesMatching } from "./EmailRulesData";
@@ -91,7 +93,12 @@ export async function EmailSendTest(
       }).catch(() => undefined);
     };
     try {
-      await transport.sendMail(BuildEmailMessage(testNotification, recipient));
+      await SendMailBounded(
+        transport,
+        BuildEmailMessage(testNotification, recipient),
+        EmailQueueSettings.sendTimeoutMs,
+        false, // no retry follows, so rejecting at the bound is safe
+      );
     } catch (error) {
       record("failed", String(error));
       throw error;

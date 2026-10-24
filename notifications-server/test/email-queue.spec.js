@@ -201,18 +201,59 @@ describe("email queue", () => {
     expect(mockEmailCounterAdd).toHaveBeenCalledWith(1);
   });
 
-  test("times out a hung send and retries successfully", async () => {
+  test("does not retry a send that outlives the timeout and records one failure", async () => {
+    jest.useFakeTimers();
+    try {
+      EmailQueueSettings.sendTimeoutMs = 20;
+      EmailQueueSetTransport({ sendMail: mockSendMail }, "noreply@example.com", "");
+      mockSendMail.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(resolve, EmailQueueSettings.sendTimeoutMs * 10);
+          }),
+      );
+      EmailQueueEnqueue({ notification: notification(), recipient: "user@example.com" });
+      await jest.advanceTimersByTimeAsync(0); // start the send and arm the watchdog
+      await jest.advanceTimersByTimeAsync(EmailQueueSettings.sendTimeoutMs); // watchdog fires
+      await jest.advanceTimersByTimeAsync(EmailQueueSettings.sendTimeoutMs * 9); // send settles
+      await EmailQueueWaitForIdle();
+
+      expect(mockSendMail).toHaveBeenCalledTimes(1);
+      expect(EmailDeliveriesRecord).toHaveBeenCalledTimes(1);
+      expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({
+          status: "failed",
+          attempts: 1,
+          error: expect.stringContaining("timed out"),
+        }),
+      );
+      expect(mockEmailCounterAdd).toHaveBeenCalledWith(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("treats a transport timeout as terminal", async () => {
     EmailQueueSettings.retryBaseDelayMs = 1;
-    EmailQueueSettings.sendTimeoutMs = 20;
     EmailQueueSetTransport({ sendMail: mockSendMail }, "noreply@example.com", "");
-    mockSendMail.mockImplementationOnce(
-      () => new Promise(() => {}), // never resolves
+    mockSendMail.mockRejectedValue(
+      Object.assign(new Error("Socket timeout"), { code: "ETIMEDOUT" }),
     );
     EmailQueueEnqueue({ notification: notification(), recipient: "user@example.com" });
     await EmailQueueWaitForIdle();
 
-    expect(mockSendMail).toHaveBeenCalledTimes(2);
-    expect(mockEmailCounterAdd).not.toHaveBeenCalled();
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
+    expect(EmailDeliveriesRecord).toHaveBeenCalledTimes(1);
+    expect(EmailDeliveriesRecord).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({
+        status: "failed",
+        attempts: 1,
+        error: expect.stringContaining("Socket timeout"),
+      }),
+    );
+    expect(mockEmailCounterAdd).toHaveBeenCalledWith(1);
   });
 
   test("drops jobs when the queue is full", async () => {
@@ -368,6 +409,9 @@ describe("transport creation", () => {
         port: 465,
         secure: true,
         auth: { user: "user", pass: "pass" },
+        connectionTimeout: EmailQueueSettings.sendTimeoutMs,
+        greetingTimeout: EmailQueueSettings.sendTimeoutMs,
+        socketTimeout: EmailQueueSettings.sendTimeoutMs,
       }),
     );
   });
