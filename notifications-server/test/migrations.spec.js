@@ -362,6 +362,12 @@ describe("database migrations", () => {
       expect(deliveries).toHaveLength(1);
       expect(deliveries[0].status).toBe("failed");
       expect(deliveries[0].attempts).toBe(3);
+      // The SQLite primary key already matches the Postgres schema after 0009
+      expect(() =>
+        insertDelivery.run(
+          "delivery-1", "other@example.com", "n-1", "Build", "ci", "error", "sent", 1, "", "2026-01-02T00:00:00.000Z",
+        ),
+      ).toThrow();
       // New rules must keep working without providing the new column
       database
         .prepare(
@@ -380,7 +386,7 @@ describe("database migrations", () => {
     }
   });
 
-  test("applies the full Postgres migration sequence including 0008", () => {
+  test("applies the full Postgres migration sequence including 0009", () => {
     const { newDb } = require("pg-mem");
     const crypto = require("crypto");
     const database = newDb();
@@ -417,6 +423,82 @@ describe("database migrations", () => {
         "SELECT \"severityMode\" FROM email_rules WHERE \"id\" = '00000000-0000-0000-0000-000000000001'",
       ).severityMode,
     ).toBe("threshold");
+    // The 0009 primary key matches the SQLite schema: duplicates are rejected
+    expect(() =>
+      database.public.none(
+        `INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+         VALUES ('00000000-0000-0000-0000-000000000002', 'other@example.com', 'n', 'Build', 'ci', 'error', 'sent', 1, '', '2026-01-02T00:00:00.000Z')`,
+      ),
+    ).toThrow();
+    database.public.none(
+      `INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+       VALUES ('00000000-0000-0000-0000-000000000004', 'user@example.com', 'n', 'Build', 'ci', 'error', 'sent', 1, '', '2026-01-02T00:00:00.000Z')`,
+    );
+    expect(
+      database.public.one("SELECT COUNT(*) AS count FROM email_deliveries").count,
+    ).toBe(2);
+  });
+
+  test("applies 0009 email deliveries primary key to an existing 0008 Postgres database with duplicate ids", () => {
+    const { newDb } = require("pg-mem");
+    const crypto = require("crypto");
+    const database = newDb();
+    database.public.registerFunction({
+      name: "gen_random_uuid",
+      args: [],
+      returns: "uuid",
+      implementation: () => crypto.randomUUID(),
+      impure: true,
+    });
+    for (const file of migrationFiles(postgresMigrations)) {
+      if (file === "init-0009.sql") break;
+      database.public.none(
+        fs.readFileSync(path.join(postgresMigrations, file), "utf8"),
+      );
+    }
+    database.public.none(`
+      INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+      VALUES ('11111111-1111-1111-1111-111111111111', 'user@example.com', 'n-1', 'Build', 'ci', 'error', 'sent', 1, '', '2026-01-01T00:00:00.000Z');
+      INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+      VALUES ('11111111-1111-1111-1111-111111111111', 'other@example.com', 'n-1', 'Build', 'ci', 'error', 'failed', 3, 'smtp down', '2026-01-02T00:00:00.000Z');
+      INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+      VALUES ('22222222-2222-2222-2222-222222222222', 'third@example.com', 'n-2', 'Deploy', 'ci', 'warning', 'sent', 1, '', '2026-01-03T00:00:00.000Z');
+    `);
+
+    database.public.none(
+      fs.readFileSync(path.join(postgresMigrations, "init-0009.sql"), "utf8"),
+    );
+
+    // One row per id after the dedupe: the duplicate id keeps its smallest
+    // values (per-column MIN), the unique row is preserved unchanged
+    const deliveries = database.public.many(
+      'SELECT * FROM email_deliveries ORDER BY "createdAt"',
+    );
+    expect(deliveries).toHaveLength(2);
+    expect(deliveries[0].createdAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(deliveries[0].recipient).toBe("other@example.com");
+    expect(deliveries[0].status).toBe("failed");
+    expect(deliveries[0].attempts).toBe(1);
+    expect(deliveries[1].recipient).toBe("third@example.com");
+    expect(deliveries[1].notificationTitle).toBe("Deploy");
+    expect(deliveries[1].status).toBe("sent");
+    // The primary key now rejects duplicate ids and accepts new ones
+    expect(() =>
+      database.public.none(
+        `INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+         VALUES ('11111111-1111-1111-1111-111111111111', 'again@example.com', 'n-3', 'Build', 'ci', 'error', 'sent', 1, '', '2026-01-04T00:00:00.000Z')`,
+      ),
+    ).toThrow();
+    database.public.none(
+      `INSERT INTO email_deliveries ("id", "recipient", "notificationId", "notificationTitle", "source", "severity", "status", "attempts", "error", "createdAt")
+       VALUES ('33333333-3333-3333-3333-333333333333', 'new@example.com', 'n-4', 'Build', 'ci', 'error', 'sent', 1, '', '2026-01-05T00:00:00.000Z')`,
+    );
+    expect(
+      database.public.one("SELECT COUNT(*) AS count FROM email_deliveries").count,
+    ).toBe(3);
+    expect(
+      database.public.many('SELECT "recipient" FROM email_deliveries ORDER BY "createdAt"'),
+    ).toHaveLength(3);
   });
 
   test("applies the Postgres migration sequence in an in-memory Postgres emulator", () => {

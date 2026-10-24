@@ -6,7 +6,6 @@ import {
 } from "@devopsplaybook.io/common-utils";
 import { StandardTracerFastifyRegisterHooks } from "@devopsplaybook.io/otel-utils-fastify";
 import cors from "@fastify/cors";
-import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { watchFile } from "fs-extra";
 import { rename } from "fs/promises";
@@ -19,6 +18,8 @@ import {
   OTelTracer,
 } from "./OTelContext";
 import { RegisterErrorHandler, RegisterNotFoundHandler } from "./ErrorHandlers";
+import { RegisterSecurityHeaders } from "./SecurityHeaders";
+import { RegisterStatic } from "./Static";
 import { RetentionConfig } from "./Retention";
 import {
   AuthInit,
@@ -133,19 +134,7 @@ Promise.resolve().then(async () => {
     trustProxy: ParseTrustedProxies(config.TRUSTED_PROXIES),
   });
 
-  fastify.addHook("onSend", async (_request, reply) => {
-    reply.header("X-Content-Type-Options", "nosniff");
-    reply.header("X-Frame-Options", "DENY");
-    reply.header("Referrer-Policy", "no-referrer");
-    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    // 'unsafe-inline' is required by the Nuxt static output (inline importmap,
-    // payload scripts and styles); no external scripts are allowed.
-    reply.header(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; base-uri 'self'; frame-ancestors 'none'",
-    );
-  });
+  RegisterSecurityHeaders(fastify);
 
   RegisterErrorHandler(fastify);
 
@@ -186,11 +175,7 @@ Promise.resolve().then(async () => {
     return { started: true };
   });
 
-  fastify.register(fastifyStatic, {
-    root: path.join(__dirname, "../web"),
-    prefix: "/",
-    wildcard: false,
-  });
+  RegisterStatic(fastify);
 
   RegisterNotFoundHandler(fastify);
 

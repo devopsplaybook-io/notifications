@@ -1,6 +1,6 @@
 {
   "name": "notifications-server",
-  "version": "0.26.0",
+  "version": "0.28.0",
   "author": "",
   "license": "MIT",
   "scripts": {
@@ -12,7 +12,7 @@
     "dev": "tsx watch ./src/App.ts"
   },
   "dependencies": {
-    "@devopsplaybook.io/common-utils": "^1.15.1",
+    "@devopsplaybook.io/common-utils": "^1.15.2",
     "@devopsplaybook.io/otel-utils": "^1.5.1",
     "@devopsplaybook.io/otel-utils-fastify": "^1.4.1",
     "@fastify/cors": "^11.3.1",
@@ -28,6 +28,9 @@
     "sanitize-html": "^2.18.1",
     "uuid": "^14.0.3",
     "web-push": "^3.6.7"
+  },
+  "overrides": {
+    "@opentelemetry/api": "1.10.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
