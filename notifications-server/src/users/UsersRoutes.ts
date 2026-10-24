@@ -23,6 +23,15 @@ let creatingInitialUser = false;
 // longer values, so the API enforces it.
 const USER_NAME_MAX_LENGTH = 100;
 
+// Applies to new and changed passwords only; existing shorter passwords keep
+// working at login (no lockout).
+const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MIN_ERROR = `Invalid: Password (minimum ${PASSWORD_MIN_LENGTH} characters)`;
+
+function IsValidNewPassword(password: unknown): password is string {
+  return typeof password === "string" && password.length >= PASSWORD_MIN_LENGTH;
+}
+
 export class UsersRoutes {
   public async getRoutes(fastify: FastifyInstance): Promise<void> {
     fastify.get("/status/initialization", async (req, res) => {
@@ -118,6 +127,9 @@ export class UsersRoutes {
         if (!req.body?.password) {
           return res.status(400).send({ error: "Missing: Password" });
         }
+        if (!IsValidNewPassword(req.body.password)) {
+          return res.status(400).send({ error: PASSWORD_MIN_ERROR });
+        }
         if (name.length > USER_NAME_MAX_LENGTH) {
           return res.status(400).send({ error: "Invalid: Name" });
         }
@@ -151,6 +163,11 @@ export class UsersRoutes {
       const user = await UsersDataGet(OTelRequestSpan(req), userSession.userId);
       if (!req.body?.password || !req.body?.passwordOld) {
         return res.status(400).send({ error: "Missing: Password" });
+      }
+      // Enforced before the old-password check: avoids bcrypt work and does
+      // not reveal old-password validity to an invalid request.
+      if (!IsValidNewPassword(req.body.password)) {
+        return res.status(400).send({ error: PASSWORD_MIN_ERROR });
       }
       if (
         !(await UserPasswordCheckPassword(

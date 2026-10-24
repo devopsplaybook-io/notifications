@@ -52,9 +52,9 @@ jest.mock("../dist/notifications/PushService", () => ({
   PushNormalizeUserAgent: jest.fn((userAgent) =>
     typeof userAgent === "string" ? userAgent.slice(0, 500) : "",
   ),
-  PushSubscribe: jest.fn().mockResolvedValue(undefined),
+  PushSubscribe: jest.fn().mockResolvedValue(true),
   PushListSubscriptions: jest.fn().mockResolvedValue([]),
-  PushUnsubscribe: jest.fn().mockResolvedValue(undefined),
+  PushUnsubscribe: jest.fn().mockResolvedValue(true),
   PushUnsubscribeById: jest.fn().mockResolvedValue(false),
 }));
 
@@ -77,12 +77,16 @@ const {
 const { EmailEvaluateNotification } = require("../dist/emails/EmailService");
 const { NotificationsRoutes } = require("../dist/notifications/NotificationsRoutes");
 const { PushRoutes } = require("../dist/notifications/PushRoutes");
+const {
+  NotificationIngestRateLimitInit,
+} = require("../dist/notifications/IngestRateLimit");
 
 describe("notification routes", () => {
   let app;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    NotificationIngestRateLimitInit({ NOTIFICATION_INGEST_RATE_LIMIT: 10_000 });
     AuthGetUserSession.mockResolvedValue({
       isAuthenticated: false,
       userId: null,
@@ -572,8 +576,49 @@ describe("notification routes", () => {
     );
     expect(PushUnsubscribe).toHaveBeenCalledWith(
       undefined,
+      "session-user",
       subscription.endpoint,
     );
+  });
+
+  test("rejects a subscribe that would take over another user's endpoint", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    PushSubscribe.mockResolvedValueOnce(false);
+    const response = await app.inject({
+      method: "POST",
+      url: "/push/subscribe",
+      headers: { authorization: "Bearer session" },
+      payload: {
+        subscription: {
+          endpoint: "https://push.example/subscription",
+          keys: { p256dh: "public-key", auth: "authentication-key" },
+        },
+      },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(response.body).error).toContain("another user");
+  });
+
+  test("rate-limits notification creation per API token", async () => {
+    NotificationIngestRateLimitInit({ NOTIFICATION_INGEST_RATE_LIMIT: 2 });
+    const post = (token) =>
+      app.inject({
+        method: "POST",
+        url: "/notifications",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { title: "Test" },
+      });
+
+    expect((await post("token-a")).statusCode).toBe(201);
+    expect((await post("token-a")).statusCode).toBe(201);
+    const blocked = await post("token-a");
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers["retry-after"]).toBe("60");
+    expect(JSON.parse(blocked.body)).toEqual({ error: "Too many notifications" });
+    expect((await post("token-b")).statusCode).toBe(201);
   });
 
   test("lists the push subscriptions of the session user", async () => {

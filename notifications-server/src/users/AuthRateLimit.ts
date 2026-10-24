@@ -1,7 +1,8 @@
 import { FastifyRequest } from "fastify";
+import { BoundedRateLimiter } from "../RateLimit";
 
 const WINDOW_MS = 60_000;
-const buckets = new Map<string, number[]>();
+const limiter = new BoundedRateLimiter({ windowMs: WINDOW_MS, maxBuckets: 10_000 });
 
 type AuthAction = "login" | "registration";
 
@@ -10,49 +11,34 @@ const limits: Record<AuthAction, { ip: number; username: number }> = {
   registration: { ip: 5, username: 3 },
 };
 
-function recordAttempt(key: string, limit: number, now: number): boolean {
-  const attempts = (buckets.get(key) || []).filter(
-    (timestamp) => now - timestamp < WINDOW_MS,
-  );
-  if (attempts.length >= limit) {
-    buckets.set(key, attempts);
-    return false;
-  }
-  attempts.push(now);
-  buckets.set(key, attempts);
-  return true;
-}
-
 export function AuthRateLimit(
   request: FastifyRequest,
   username: unknown,
   action: AuthAction,
+  now: number = Date.now(),
 ): boolean {
-  const now = Date.now();
   const normalizedUsername =
     typeof username === "string" ? username.trim().toLowerCase() : "";
   const actionLimits = limits[action];
 
-  if (!recordAttempt(`${action}:ip:${request.ip}`, actionLimits.ip, now)) {
+  if (
+    !limiter.tryConsume(
+      `${action}:ip:${request.ip}`,
+      actionLimits.ip,
+      now,
+    )
+  ) {
     return false;
   }
   if (
     normalizedUsername &&
-    !recordAttempt(
+    !limiter.tryConsume(
       `${action}:username:${normalizedUsername}`,
       actionLimits.username,
       now,
     )
   ) {
     return false;
-  }
-
-  if (buckets.size > 10_000) {
-    for (const [key, attempts] of buckets) {
-      if (attempts.every((timestamp) => now - timestamp >= WINDOW_MS)) {
-        buckets.delete(key);
-      }
-    }
   }
   return true;
 }

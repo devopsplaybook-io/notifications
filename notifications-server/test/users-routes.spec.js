@@ -36,7 +36,11 @@ jest.mock("../dist/OTelContext", () => ({
 const Fastify = require("fastify");
 const { AuthGetUserSession } = require("../dist/users/Auth");
 const { AuthRateLimit } = require("../dist/users/AuthRateLimit");
-const { UserPasswordCheckUnknownUser } = require("../dist/users/UserPassword");
+const {
+  UserPasswordCheckPassword,
+  UserPasswordCheckUnknownUser,
+  UserPasswordSetPassword,
+} = require("../dist/users/UserPassword");
 const {
   UsersDataAdd,
   UsersDataBumpTokenVersion,
@@ -127,7 +131,7 @@ describe("user routes", () => {
     const atLimit = await app.inject({
       method: "POST",
       url: "/users",
-      payload: { name: "a".repeat(100), password: "password" },
+      payload: { name: "a".repeat(100), password: "password-1234" },
     });
     expect(atLimit.statusCode).toBe(201);
     expect(UsersDataAdd).toHaveBeenCalledTimes(1);
@@ -136,11 +140,67 @@ describe("user routes", () => {
     const tooLong = await app.inject({
       method: "POST",
       url: "/users",
-      payload: { name: "a".repeat(101), password: "password" },
+      payload: { name: "a".repeat(101), password: "password-1234" },
     });
     expect(tooLong.statusCode).toBe(400);
     expect(JSON.parse(tooLong.body)).toEqual({ error: "Invalid: Name" });
     expect(UsersDataAdd).toHaveBeenCalledTimes(1);
+  });
+
+  test("requires a 12-character password for registration", async () => {
+    const short = await app.inject({
+      method: "POST",
+      url: "/users",
+      payload: { name: "admin", password: "a".repeat(11) },
+    });
+    expect(short.statusCode).toBe(400);
+    expect(JSON.parse(short.body).error).toContain("minimum 12 characters");
+    expect(UserPasswordSetPassword).not.toHaveBeenCalled();
+    expect(UsersDataAdd).not.toHaveBeenCalled();
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/users",
+      payload: { name: "admin", password: "a".repeat(12) },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(UserPasswordSetPassword).toHaveBeenCalled();
+    expect(UsersDataAdd).toHaveBeenCalled();
+  });
+
+  test("requires a 12-character new password before checking the old one", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "admin",
+    });
+    UsersDataGet.mockResolvedValueOnce({ id: "admin", name: "admin" });
+    const short = await app.inject({
+      method: "PUT",
+      url: "/users/password",
+      headers: { authorization: "Bearer session" },
+      payload: { passwordOld: "old-password", password: "a".repeat(11) },
+    });
+    expect(short.statusCode).toBe(400);
+    expect(JSON.parse(short.body).error).toContain("minimum 12 characters");
+    expect(UserPasswordCheckPassword).not.toHaveBeenCalled();
+    expect(UserPasswordSetPassword).not.toHaveBeenCalled();
+
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "admin",
+    });
+    UsersDataGet
+      .mockResolvedValueOnce({ id: "admin", name: "admin", tokenVersion: 0 })
+      .mockResolvedValueOnce({ id: "admin", name: "admin", tokenVersion: 1 });
+    UserPasswordCheckPassword.mockResolvedValueOnce(true);
+    const accepted = await app.inject({
+      method: "PUT",
+      url: "/users/password",
+      headers: { authorization: "Bearer session" },
+      payload: { passwordOld: "old-password", password: "a".repeat(12) },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(UserPasswordSetPassword).toHaveBeenCalled();
   });
 
   test("does not consume the login rate limit for session refreshes", async () => {

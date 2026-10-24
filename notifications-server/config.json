@@ -1,5 +1,6 @@
 {
   "CORS_POLICY_ORIGIN": "https://notifications.didierhoarau.cloud",
   "DATABASE_TYPE": "sqlite",
-  "LOG_LEVEL": "debug"
+  "LOG_LEVEL": "debug",
+  "TRUSTED_PROXIES": "127.0.0.1,::1,10.42.0.0/16"
 }
