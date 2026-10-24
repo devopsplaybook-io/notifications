@@ -38,6 +38,7 @@ const { AuthGetUserSession } = require("../dist/users/Auth");
 const { AuthRateLimit } = require("../dist/users/AuthRateLimit");
 const { UserPasswordCheckUnknownUser } = require("../dist/users/UserPassword");
 const {
+  UsersDataAdd,
   UsersDataBumpTokenVersion,
   UsersDataGet,
   UsersDataGetByName,
@@ -118,6 +119,28 @@ describe("user routes", () => {
     const registration = await app.inject({ method: "POST", url: "/users" });
     expect(registration.statusCode).toBe(400);
     expect(JSON.parse(registration.body).error).toBe("Missing: Name");
+  });
+
+  test("enforces the 100-character user name limit", async () => {
+    // SQLite ignores VARCHAR(100) while Postgres rejects longer values, so the
+    // API is the enforcement point for both backends.
+    const atLimit = await app.inject({
+      method: "POST",
+      url: "/users",
+      payload: { name: "a".repeat(100), password: "password" },
+    });
+    expect(atLimit.statusCode).toBe(201);
+    expect(UsersDataAdd).toHaveBeenCalledTimes(1);
+    expect(UsersDataAdd.mock.calls[0][1].name).toBe("a".repeat(100));
+
+    const tooLong = await app.inject({
+      method: "POST",
+      url: "/users",
+      payload: { name: "a".repeat(101), password: "password" },
+    });
+    expect(tooLong.statusCode).toBe(400);
+    expect(JSON.parse(tooLong.body)).toEqual({ error: "Invalid: Name" });
+    expect(UsersDataAdd).toHaveBeenCalledTimes(1);
   });
 
   test("does not consume the login rate limit for session refreshes", async () => {

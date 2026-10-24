@@ -27,7 +27,10 @@ jest.mock("../dist/OTelContext", () => ({
 
 const Fastify = require("fastify");
 const { AuthGetUserSession } = require("../dist/users/Auth");
-const { ApiTokensDelete } = require("../dist/apitokens/ApiTokensData");
+const {
+  ApiTokensCreate,
+  ApiTokensDelete,
+} = require("../dist/apitokens/ApiTokensData");
 const { ApiTokensRoutes } = require("../dist/apitokens/ApiTokensRoutes");
 
 describe("API token routes", () => {
@@ -84,6 +87,50 @@ describe("API token routes", () => {
       payload: { name: "  " },
     });
     expect(blank.statusCode).toBe(400);
+  });
+
+  test("enforces the 200-character token name limit", async () => {
+    // SQLite ignores VARCHAR(200) while Postgres rejects longer values, so the
+    // API is the enforcement point for both backends.
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "admin",
+    });
+    const atLimit = await app.inject({
+      method: "POST",
+      url: "/tokens",
+      headers: { authorization: "Bearer session" },
+      payload: { name: "a".repeat(200) },
+    });
+    expect(atLimit.statusCode).toBe(201);
+    expect(ApiTokensCreate).toHaveBeenCalledWith(undefined, "a".repeat(200));
+
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "admin",
+    });
+    const tooLong = await app.inject({
+      method: "POST",
+      url: "/tokens",
+      headers: { authorization: "Bearer session" },
+      payload: { name: "a".repeat(201) },
+    });
+    expect(tooLong.statusCode).toBe(400);
+    expect(JSON.parse(tooLong.body)).toEqual({ error: "Invalid: name" });
+    expect(ApiTokensCreate).toHaveBeenCalledTimes(1);
+
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "admin",
+    });
+    const trimmed = await app.inject({
+      method: "POST",
+      url: "/tokens",
+      headers: { authorization: "Bearer session" },
+      payload: { name: "  Client  " },
+    });
+    expect(trimmed.statusCode).toBe(201);
+    expect(ApiTokensCreate).toHaveBeenLastCalledWith(undefined, "Client");
   });
 
   test("returns 404 when deleting a token that does not exist", async () => {

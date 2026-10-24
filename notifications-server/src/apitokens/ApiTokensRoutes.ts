@@ -7,6 +7,10 @@ import {
   ApiTokensDelete,
 } from "./ApiTokensData";
 
+// api_tokens.name is VARCHAR(200): SQLite ignores the bound but Postgres
+// rejects longer values, so the API enforces it.
+const API_TOKEN_NAME_MAX_LENGTH = 200;
+
 export class ApiTokensRoutes {
   public async getRoutes(fastify: FastifyInstance): Promise<void> {
     // List API tokens (requires user auth)
@@ -30,9 +34,13 @@ export class ApiTokensRoutes {
       if (!userSession.isAuthenticated) {
         return res.status(401).send({ error: "Access Denied" });
       }
-      const name = req.body?.name;
-      if (!name || typeof name !== "string" || name.trim() === "") {
+      const rawName: unknown = req.body?.name;
+      const name = typeof rawName === "string" ? rawName.trim() : "";
+      if (name === "") {
         return res.status(400).send({ error: "Missing: name" });
+      }
+      if (name.length > API_TOKEN_NAME_MAX_LENGTH) {
+        return res.status(400).send({ error: "Invalid: name" });
       }
       const token = await ApiTokensCreate(OTelRequestSpan(req), name);
       return res.status(201).send(token);

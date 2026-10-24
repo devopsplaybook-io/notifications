@@ -34,12 +34,12 @@ All API routes are under `/api`. JSON routes accept and return JSON.
 | --- | --- | --- |
 | `GET /api/status` | none | `{ "started": true }` |
 | `GET /api/users/status/initialization` | none | `{ "initialized": boolean }`; always 200; initial setup only |
-| `POST /api/users` | none, first account only | `{ "name": string, "password": string }`; blocked after bootstrap |
+| `POST /api/users` | none, first account only | `{ "name": string, "password": string }`; blocked after bootstrap. `name` is trimmed and capped at 100 characters |
 | `POST /api/users/session` | none or existing session | `{ "name": string, "password": string }`; returns `{ "success": true, "token": string }`. Requests with a valid session renew the token without consuming the login rate limit. |
 | `POST /api/users/logout` | `Bearer <session>` | Revokes **all** sessions of the user (bumps the token version) |
 | `PUT /api/users/password` | `Bearer <session>` | `{ "passwordOld": string, "password": string }`; revokes other sessions and returns a fresh `token` for the current one |
 | `GET /api/tokens` | `Bearer <session>` | Returns token names and dates, never token values |
-| `POST /api/tokens` | `Bearer <session>` | `{ "name": string }`; the generated token is returned once |
+| `POST /api/tokens` | `Bearer <session>` | `{ "name": string }`; trimmed and capped at 200 characters; the generated token is returned once |
 | `DELETE /api/tokens/:id` | `Bearer <session>` | Revokes an API token; unknown IDs return 404 |
 | `GET /api/notifications` | session or `Bearer <API token>` | `limit` (1-200, default 50), `offset` (non-negative), `source`, `read` (`all`, `read`, `unread`), `severity` (case-insensitive exact match), `q` (case-insensitive substring on title/body, LIKE wildcards escaped); returns `{ "notifications": [], "total": number }` |
 | `GET /api/notifications/sources` | session or API token | Returns `{ "sources": string[], "unreadCounts": { [source]: number } }` (unread counts are global, not affected by filters) |

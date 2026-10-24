@@ -47,6 +47,14 @@ async function mountAndCreateKey() {
 }
 
 describe("api keys page", () => {
+  it("caps the key name input at the server-side 200-character limit", async () => {
+    const wrapper = mount(ApiKeysPage);
+    await flushPromises();
+    expect(wrapper.find('input[type="text"]').attributes("maxlength")).toBe(
+      "200",
+    );
+  });
+
   it("shows a curl example with the instance origin and the created token", async () => {
     const wrapper = await mountAndCreateKey();
 

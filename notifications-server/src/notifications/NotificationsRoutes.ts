@@ -34,6 +34,55 @@ function parsePagination(value: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) ? parsed : fallback;
 }
 
+interface NotificationFilters {
+  source: string;
+  read: NotificationReadFilter;
+  severity: string;
+  q: string;
+}
+
+type NormalizedFilters =
+  | { status: "ok"; filters: NotificationFilters }
+  | { status: "error"; error: string };
+
+/**
+ * Fastify parses repeated query keys (e.g. ?q=a&q=b) as arrays, which would
+ * otherwise throw on .trim() or reach the SQL bind as an array. Reject them
+ * with a 400 instead of failing with a 500.
+ */
+function NormalizeNotificationFilters(query: {
+  source?: unknown;
+  read?: unknown;
+  severity?: unknown;
+  q?: unknown;
+}): NormalizedFilters {
+  const values: Record<"source" | "read" | "severity" | "q", string> = {
+    source: "",
+    read: "",
+    severity: "",
+    q: "",
+  };
+  for (const param of ["source", "read", "severity", "q"] as const) {
+    const value = query[param];
+    if (value === undefined) continue;
+    if (typeof value !== "string") {
+      return { status: "error", error: `Invalid: ${param}` };
+    }
+    values[param] = value.trim();
+  }
+  const read: NotificationReadFilter =
+    values.read === "unread" || values.read === "read" ? values.read : "all";
+  return {
+    status: "ok",
+    filters: {
+      source: values.source,
+      read,
+      severity: values.severity,
+      q: values.q,
+    },
+  };
+}
+
 export function NormalizeNotificationData(data: unknown): string | undefined {
   if (data === undefined) {
     return "{}";
@@ -70,10 +119,10 @@ export class NotificationsRoutes {
       Querystring: {
         limit?: string;
         offset?: string;
-        source?: string;
-        read?: string;
-        severity?: string;
-        q?: string;
+        source?: unknown;
+        read?: unknown;
+        severity?: unknown;
+        q?: unknown;
       };
     }
     fastify.get<GetNotifications>("/", async (req, res) => {
@@ -81,18 +130,16 @@ export class NotificationsRoutes {
       if (!userSession.isAuthenticated && !(await IsApiTokenAuthorized(req))) {
         return res.status(401).send({ error: "Access Denied" });
       }
+      const normalized = NormalizeNotificationFilters(req.query);
+      if (normalized.status === "error") {
+        return res.status(400).send({ error: normalized.error });
+      }
+      const { source, read, severity, q } = normalized.filters;
       const limit = Math.min(
         200,
         Math.max(1, parsePagination(req.query.limit, 50)),
       );
       const offset = Math.max(0, parsePagination(req.query.offset, 0));
-      const source = req.query.source || "";
-      const read: NotificationReadFilter =
-        req.query.read === "unread" || req.query.read === "read"
-          ? req.query.read
-          : "all";
-      const severity = (req.query.severity || "").trim();
-      const q = (req.query.q || "").trim();
       const notifications = await NotificationsDataList(
         OTelRequestSpan(req),
         limit,
@@ -300,10 +347,10 @@ export class NotificationsRoutes {
     // Mark all notifications matching the filters as read (requires user auth)
     interface PutNotificationsReadAll extends RequestGenericInterface {
       Querystring: {
-        source?: string;
-        read?: string;
-        severity?: string;
-        q?: string;
+        source?: unknown;
+        read?: unknown;
+        severity?: unknown;
+        q?: unknown;
       };
     }
     fastify.put<PutNotificationsReadAll>("/read-all", async (req, res) => {
@@ -311,13 +358,11 @@ export class NotificationsRoutes {
       if (!userSession.isAuthenticated) {
         return res.status(401).send({ error: "Access Denied" });
       }
-      const source = req.query.source || "";
-      const read: NotificationReadFilter =
-        req.query.read === "unread" || req.query.read === "read"
-          ? req.query.read
-          : "all";
-      const severity = (req.query.severity || "").trim();
-      const q = (req.query.q || "").trim();
+      const normalized = NormalizeNotificationFilters(req.query);
+      if (normalized.status === "error") {
+        return res.status(400).send({ error: normalized.error });
+      }
+      const { source, read, severity, q } = normalized.filters;
       const updated = await NotificationsDataUpdateReadAll(
         OTelRequestSpan(req),
         source,
@@ -331,10 +376,10 @@ export class NotificationsRoutes {
     // Delete all notifications matching the filters (requires user auth)
     interface DeleteNotificationsAll extends RequestGenericInterface {
       Querystring: {
-        source?: string;
-        read?: string;
-        severity?: string;
-        q?: string;
+        source?: unknown;
+        read?: unknown;
+        severity?: unknown;
+        q?: unknown;
       };
     }
     fastify.delete<DeleteNotificationsAll>("/", async (req, res) => {
@@ -342,13 +387,11 @@ export class NotificationsRoutes {
       if (!userSession.isAuthenticated) {
         return res.status(401).send({ error: "Access Denied" });
       }
-      const source = req.query.source || "";
-      const read: NotificationReadFilter =
-        req.query.read === "unread" || req.query.read === "read"
-          ? req.query.read
-          : "all";
-      const severity = (req.query.severity || "").trim();
-      const q = (req.query.q || "").trim();
+      const normalized = NormalizeNotificationFilters(req.query);
+      if (normalized.status === "error") {
+        return res.status(400).send({ error: normalized.error });
+      }
+      const { source, read, severity, q } = normalized.filters;
       const count = await NotificationsDataDeleteAll(
         OTelRequestSpan(req),
         source,

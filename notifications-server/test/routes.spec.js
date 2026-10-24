@@ -468,6 +468,65 @@ describe("notification routes", () => {
     );
   });
 
+  test("rejects repeated filter query parameters with 400 instead of 500", async () => {
+    const list = await app.inject({
+      method: "GET",
+      url: "/notifications?source=a&source=b",
+      headers: { authorization: "Bearer api-token" },
+    });
+    expect(list.statusCode).toBe(400);
+    expect(JSON.parse(list.body)).toEqual({ error: "Invalid: source" });
+    expect(notificationsData.NotificationsDataList).not.toHaveBeenCalled();
+
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const readAll = await app.inject({
+      method: "PUT",
+      url: "/notifications/read-all?q=a&q=b",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(readAll.statusCode).toBe(400);
+    expect(JSON.parse(readAll.body)).toEqual({ error: "Invalid: q" });
+    expect(
+      notificationsData.NotificationsDataUpdateReadAll,
+    ).not.toHaveBeenCalled();
+
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const deleteAll = await app.inject({
+      method: "DELETE",
+      url: "/notifications?source=a&source=b",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(deleteAll.statusCode).toBe(400);
+    expect(JSON.parse(deleteAll.body)).toEqual({ error: "Invalid: source" });
+    expect(notificationsData.NotificationsDataDeleteAll).not.toHaveBeenCalled();
+  });
+
+  test("trims query filters", async () => {
+    AuthGetUserSession.mockResolvedValueOnce({
+      isAuthenticated: true,
+      userId: "session-user",
+    });
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/notifications?source=%20build%20&severity=%20error%20&q=%20deploy%20",
+      headers: { authorization: "Bearer session" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(notificationsData.NotificationsDataDeleteAll).toHaveBeenCalledWith(
+      undefined,
+      "build",
+      "all",
+      "error",
+      "deploy",
+    );
+  });
+
   test("rejects malformed push subscriptions with a client error", async () => {
     AuthGetUserSession.mockResolvedValueOnce({
       isAuthenticated: true,

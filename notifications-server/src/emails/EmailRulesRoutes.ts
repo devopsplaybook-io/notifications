@@ -1,5 +1,5 @@
 import { FastifyInstance, RequestGenericInterface } from "fastify";
-import { OTelRequestSpan } from "../OTelContext";
+import { OTelLogger, OTelRequestSpan } from "../OTelContext";
 import { AuthGetUserSession } from "../users/Auth";
 import {
   EmailRulesList,
@@ -12,6 +12,10 @@ import {
 } from "./EmailRulesData";
 import { EmailDeliveriesList } from "./EmailDeliveriesData";
 import { EmailIsConfigured, EmailSendTest } from "./EmailService";
+
+const logger = OTelLogger().createModuleLogger("EmailRulesRoutes");
+const toError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
 
 const RECIPIENT_MAX_LENGTH = 320;
 const RECIPIENT_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -239,7 +243,11 @@ export class EmailRulesRoutes {
       try {
         await EmailSendTest(OTelRequestSpan(req), req.body.recipient);
       } catch (error) {
-        req.log.error(error, "Test email delivery failed");
+        logger.error(
+          "Test email delivery failed",
+          toError(error),
+          OTelRequestSpan(req),
+        );
         return res.status(502).send({ error: "Test email delivery failed" });
       }
       return res.status(200).send({ success: true });

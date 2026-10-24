@@ -34,6 +34,7 @@ jest.mock("../dist/emails/EmailService", () => ({
   EmailIsConfigured: jest.fn().mockReturnValue(false),
   EmailSendTest: jest.fn().mockResolvedValue(undefined),
 }));
+const mockLogError = jest.fn();
 jest.mock("../dist/OTelContext", () => ({
   OTelRequestSpan: () => undefined,
   OTelTracer: () => ({ startSpan: () => ({ end: jest.fn() }) }),
@@ -41,7 +42,7 @@ jest.mock("../dist/OTelContext", () => ({
     createModuleLogger: () => ({
       info: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn(),
+      error: mockLogError,
     }),
   }),
 }));
@@ -340,6 +341,11 @@ describe("email rules routes", () => {
       payload: { recipient: "user@example.com" },
     });
     expect(failed.statusCode).toBe(502);
+    expect(mockLogError).toHaveBeenCalledWith(
+      "Test email delivery failed",
+      expect.any(Error),
+      undefined,
+    );
   });
 
   test("rejects recipients outside the simple address shape", () => {
