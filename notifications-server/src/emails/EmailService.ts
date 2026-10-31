@@ -1,4 +1,4 @@
-import { Span } from "@opentelemetry/sdk-trace-base";
+import type { Span } from "@opentelemetry/sdk-trace";
 import { OTelTracer } from "../OTelContext";
 import { Config } from "../Config";
 import { Notification } from "../model/Notification";

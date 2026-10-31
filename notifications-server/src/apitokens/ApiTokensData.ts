@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
-import { Span } from "@opentelemetry/sdk-trace-base";
+import type { Span } from "@opentelemetry/sdk-trace";
 import { DbUtilsExecSQL, DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
 import { OTelLogger, OTelTracer } from "../OTelContext";
 

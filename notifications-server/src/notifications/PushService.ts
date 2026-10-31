@@ -1,7 +1,7 @@
 import * as webpush from "web-push";
 import { createHash } from "crypto";
 import { isIP } from "net";
-import { Span } from "@opentelemetry/sdk-trace-base";
+import type { Span } from "@opentelemetry/sdk-trace";
 import { DbUtilsExecSQL, DbUtilsQuerySQL } from "@devopsplaybook.io/common-utils";
 import { OTelTracer } from "../OTelContext";
 import { Config, DEFAULT_PUSH_ALLOWED_HOSTS } from "../Config";

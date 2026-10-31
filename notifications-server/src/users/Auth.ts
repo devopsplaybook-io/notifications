@@ -3,7 +3,7 @@ import * as path from "path";
 import { User } from "../model/User";
 import { UserSession } from "../model/UserSession";
 import { Config } from "../Config";
-import { Span } from "@opentelemetry/sdk-trace-base";
+import type { Span } from "@opentelemetry/sdk-trace";
 import { OTelLogger, OTelTracer } from "../OTelContext";
 import { UsersDataGet } from "./UsersData";
 

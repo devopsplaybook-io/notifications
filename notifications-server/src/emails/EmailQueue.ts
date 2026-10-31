@@ -1,7 +1,7 @@
 import * as nodemailer from "nodemailer";
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
-import { Span } from "@opentelemetry/sdk-trace-base";
+import type { Span } from "@opentelemetry/sdk-trace";
 import { OTelLogger, OTelMeter, OTelTracer } from "../OTelContext";
 import { Config } from "../Config";
 import { Notification } from "../model/Notification";
