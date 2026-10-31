@@ -1,5 +1,5 @@
 import * as bcrypt from "bcrypt";
-import { Span } from "@opentelemetry/sdk-trace-base";
+import type { Span } from "@opentelemetry/sdk-trace";
 import { OTelTracer } from "../OTelContext";
 import { User } from "../model/User";
 
