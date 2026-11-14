@@ -1,6 +1,6 @@
 {
   "name": "notifications-server",
-  "version": "0.28.1",
+  "version": "0.28.2",
   "author": "",
   "license": "MIT",
   "scripts": {
@@ -12,23 +12,23 @@
     "dev": "tsx watch ./src/App.ts"
   },
   "dependencies": {
-    "@devopsplaybook.io/common-utils": "^2.4.1",
-    "@devopsplaybook.io/otel-utils": "^1.9.1",
-    "@devopsplaybook.io/otel-utils-fastify": "^1.7.1",
-    "@fastify/cors": "^11.3.1",
-    "@fastify/static": "^10.1.8",
-    "@opentelemetry/sdk-trace": "^3.0.0",
+    "@devopsplaybook.io/common-utils": "^2.9.2",
+    "@devopsplaybook.io/otel-utils": "^1.14.2",
+    "@devopsplaybook.io/otel-utils-fastify": "^1.11.2",
+    "@fastify/cors": "^11.4.3",
+    "@fastify/static": "^10.1.11",
+    "@opentelemetry/sdk-trace": "^3.1.1",
     "bcrypt": "^6.0.0",
-    "better-sqlite3": "^13.0.3",
-    "fastify": "^5.12.7",
+    "better-sqlite3": "^13.2.0",
+    "fastify": "^5.12.8",
     "fs-extra": "^11.4.1",
     "jsonwebtoken": "^9.0.3",
-    "marked": "^18.1.2",
-    "nodemailer": "^10.3.1",
+    "marked": "^18.2.0",
+    "nodemailer": "^10.5.0",
     "pino-pretty": "^13.2.0",
-    "sanitize-html": "^2.18.1",
+    "sanitize-html": "^2.18.2",
     "uuid": "^14.0.3",
-    "web-push": "^3.6.7"
+    "web-push": "^4.0.0"
   },
   "overrides": {
     "@opentelemetry/api": "1.10.0"
@@ -42,7 +42,7 @@
     "@types/sanitize-html": "^2.16.2",
     "@types/web-push": "^3.6.4",
     "jest": "^30.5.2",
-    "oxlint": "^1.90.0",
+    "oxlint": "^1.93.0",
     "pg-mem": "^3.0.14",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
