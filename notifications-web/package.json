@@ -1,6 +1,6 @@
 {
   "name": "notifications-web",
-  "version": "0.28.1",
+  "version": "0.28.2",
   "private": true,
   "scripts": {
     "build": "nuxt build",
@@ -14,26 +14,26 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "@vitejs/plugin-vue": "^6.0.10",
-    "@vitest/coverage-v8": "^5.0.5",
+    "@vitejs/plugin-vue": "^6.0.11",
+    "@vitest/coverage-v8": "^5.1.0",
     "@vue/test-utils": "^2.5.1",
     "happy-dom": "^21.0.4",
-    "nuxt": "^4.6.3",
-    "oxlint": "^1.90.0",
-    "typescript": "^5.9.3",
-    "vitest": "^5.0.5",
+    "nuxt": "^4.6.4",
+    "oxlint": "^1.93.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0",
     "vue-tsc": "^3.3.14"
   },
   "dependencies": {
-    "@devopsplaybook.io/common-web": "^0.8.1",
+    "@devopsplaybook.io/common-web": "^0.12.2",
     "@picocss/pico": "^2.1.1",
     "@pinia/nuxt": "^1.0.3",
     "@vueuse/core": "^15.0.0",
-    "axios": "^1.21.0",
+    "axios": "^1.21.1",
     "bootstrap-icons": "^1.13.2",
-    "dompurify": "^3.4.17",
+    "dompurify": "^3.4.18",
     "jwt-decode": "^4.0.0",
-    "marked": "^18.1.2",
+    "marked": "^18.2.0",
     "pinia": "^4.1.0"
   }
 }
