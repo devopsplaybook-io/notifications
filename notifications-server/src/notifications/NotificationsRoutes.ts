@@ -23,6 +23,11 @@ const logger = OTelLogger().createModuleLogger("NotificationsRoutes");
 const toError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
 
+// Long but legitimate reports (for example the daily Edsembli marks report)
+// must be delivered in full, so the body cap leaves ample headroom while
+// still bounding a single notification.
+export const MAX_NOTIFICATION_BODY_BYTES = 256 * 1024;
+
 function getBearerToken(header: string | undefined): string | undefined {
   return header?.match(/^Bearer\s+(\S+)$/i)?.[1];
 }
@@ -214,8 +219,8 @@ export class NotificationsRoutes {
       if (typeof textBody !== "string") {
         return res.status(400).send({ error: "Invalid: body" });
       }
-      if (Buffer.byteLength(textBody, "utf8") > 10 * 1024) {
-        return res.status(400).send({ error: "Invalid: body exceeds 10 KB" });
+      if (Buffer.byteLength(textBody, "utf8") > MAX_NOTIFICATION_BODY_BYTES) {
+        return res.status(400).send({ error: "Invalid: body exceeds 256 KB" });
       }
       const source = body.source === undefined ? "api" : body.source;
       if (
