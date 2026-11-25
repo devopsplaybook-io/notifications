@@ -101,6 +101,10 @@ Push subscription endpoints must be `https` URLs on allowed Web Push service hos
 | `TRUSTED_PROXIES` | `127.0.0.1,::1,10.42.0.0/16` | Comma-separated proxy addresses/CIDRs allowed to set `X-Forwarded-For`. Read at startup; set it to the reverse proxy network actually in front of the service and restart. Empty = trust no proxy |
 | `PUSH_ALLOWED_HOSTS` | `fcm.googleapis.com,android.googleapis.com,push.services.mozilla.com,*.push.services.mozilla.com,*.notify.windows.com,*.wns.windows.com,web.push.apple.com,*.push.apple.com` | Comma-separated Web Push endpoint hosts; a leading `*.` matches strict subdomains. Extend it for self-hosted or custom push services |
 | `NOTIFICATION_INGEST_RATE_LIMIT` | `120` | Maximum `POST /api/notifications` requests per API token per minute; non-positive or invalid values fall back to 120 |
+| `JWT_VALIDITY_DURATION` | `2592000` (30 days) | Lifetime in seconds of the token issued at login or renewal |
+| `JWT_SESSION_MAX_DURATION` | `7776000` (90 days) | Absolute session lifetime in seconds counted from the first login (`sessionStartedAt` claim); renewals never extend it, `<= 0` disables the cap |
+
+Sessions slide for up to three months: the login token lives 30 days and every authenticated request older than 24 hours re-issues it through the `X-Renewed-Token` response header, while the web client renews proactively on app start, on tab focus/visibility and when less than 20% of the token lifetime remains (`POST /api/users/session`). The `sessionStartedAt` claim is preserved across re-issues and the server rejects any token once 90 days have elapsed since the first login, so the user re-authenticates at most every three months.
 
 Sessions are bound to a per-user `tokenVersion`: changing the password or calling `/api/users/logout` revokes all of the user's sessions (tokens issued before this migration carry no version claim and count as version 0, so existing sessions stay valid until revoked). Security response headers are applied by the API, including a Content-Security-Policy that allows only same-origin resources plus the inline scripts and styles required by the static Nuxt build.
 

@@ -1,7 +1,7 @@
 import { FastifyInstance, RequestGenericInterface } from "fastify";
 import { User } from "../model/User";
 import { OTelRequestSpan } from "../OTelContext";
-import { AuthGenerateJWT, AuthGetUserSession } from "./Auth";
+import { AuthGenerateJWT, AuthGetSessionStartedAt, AuthGetUserSession } from "./Auth";
 import {
   UserPasswordCheckPassword,
   UserPasswordCheckUnknownUser,
@@ -56,7 +56,10 @@ export class UsersRoutes {
         }
         return res
           .status(201)
-          .send({ success: true, token: await AuthGenerateJWT(user) });
+          .send({
+            success: true,
+            token: await AuthGenerateJWT(user, AuthGetSessionStartedAt(req)),
+          });
       }
 
       if (!AuthRateLimit(req, req.body?.name, "login")) {
@@ -193,7 +196,7 @@ export class UsersRoutes {
       }
       return res.status(201).send({
         success: true,
-        token: await AuthGenerateJWT(updated),
+        token: await AuthGenerateJWT(updated, AuthGetSessionStartedAt(req)),
       });
     });
 

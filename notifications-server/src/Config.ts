@@ -44,9 +44,13 @@ export class Config extends ConfigBase {
   // Per-API-token creation limit for POST /api/notifications, in requests per
   // minute; non-positive or invalid values fall back to 120.
   public NOTIFICATION_INGEST_RATE_LIMIT = 120;
-  // Session validity in seconds: 90 days by default (field is inherited from
-  // ConfigBase and can be overridden via the JWT_VALIDITY_DURATION env variable)
-  public JWT_VALIDITY_DURATION = 90 * 24 * 3600;
+  // Session policy: a token lives 30 days and the absolute session (from the
+  // first login) is capped at 90 days. Both fields are inherited from
+  // ConfigBase; they are re-declared here and re-registered below so the
+  // values also survive a common-utils downgrade (whose ConfigBase captured
+  // its 1-hour default in the base constructor).
+  public JWT_VALIDITY_DURATION = 2592000;
+  public JWT_SESSION_MAX_DURATION = 7776000;
 
   constructor() {
     super("notifications-server");
@@ -68,5 +72,7 @@ export class Config extends ConfigBase {
     this.addConfigField({ field: "TRUSTED_PROXIES" });
     this.addConfigField({ field: "PUSH_ALLOWED_HOSTS" });
     this.addConfigField({ field: "NOTIFICATION_INGEST_RATE_LIMIT" });
+    this.addConfigField({ field: "JWT_VALIDITY_DURATION" });
+    this.addConfigField({ field: "JWT_SESSION_MAX_DURATION" });
   }
 }

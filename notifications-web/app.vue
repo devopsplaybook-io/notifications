@@ -1,9 +1,11 @@
 <script setup>
 import { PushService } from "~/services/PushService";
+import { SessionRenewalStart } from "~/services/SessionRenewal";
 import { formatTabTitle } from "~/services/TabTitle";
 
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
+let stopSessionRenewal = null;
 
 // Reactive tab title: the open tab itself signals new items, e.g.
 // "(3) Notifications". The base title comes from nuxt.config.ts.
@@ -18,11 +20,17 @@ useHead({
 useAppHeight();
 
 onMounted(async () => {
+  stopSessionRenewal = SessionRenewalStart();
   // Re-register push only when the user previously enabled it; never
   // auto-subscribes and never triggers the browser permission prompt.
   if (await authenticationStore.ensureAuthenticated()) {
     await PushService.syncIfEnabled();
   }
+});
+
+onUnmounted(() => {
+  stopSessionRenewal?.();
+  stopSessionRenewal = null;
 });
 </script>
 
