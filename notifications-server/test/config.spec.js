@@ -2,6 +2,11 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+const {
+  AuthSessionPolicyCheck,
+  AuthSessionPolicyLog,
+} = require("@devopsplaybook.io/common-utils");
+
 const { Config } = require("../dist/Config");
 
 describe("session configuration", () => {
@@ -49,6 +54,52 @@ describe("session configuration", () => {
 
     expect(config.JWT_VALIDITY_DURATION).toBe(2592000);
     expect(config.JWT_SESSION_MAX_DURATION).toBe(7776000);
+  });
+
+  test("matches the documented auth session policy", async () => {
+    const config = newConfig();
+    await config.reload();
+
+    const result = AuthSessionPolicyCheck(config, { app: "notifications" });
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  test("logs the intended values and the policy line at startup", async () => {
+    const config = newConfig();
+    const lines = [];
+    await config.reload((message) => lines.push(message));
+    AuthSessionPolicyLog(config, {
+      app: "notifications",
+      logger: (message) => lines.push(message),
+    });
+
+    expect(lines).toContain(
+      "Configuration Value: JWT_VALIDITY_DURATION: 2592000 (from defaults)",
+    );
+    expect(lines).toContain(
+      "Configuration Value: JWT_SESSION_MAX_DURATION: 7776000 (from defaults)",
+    );
+    expect(lines).toContain(
+      "Auth session policy: app=notifications validity=2592000s cap=7776000s renewal=sliding status=ok",
+    );
+  });
+
+  test("reports an error line for a regressed configuration", async () => {
+    process.env.JWT_VALIDITY_DURATION = "60";
+    const config = newConfig();
+    const lines = [];
+    await config.reload();
+    const result = AuthSessionPolicyLog(config, {
+      app: "notifications",
+      logger: (message) => lines.push(message),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(lines[0]).toContain("status=error");
+    expect(lines.some((line) => line.startsWith("Auth session policy error:"))).toBe(
+      true,
+    );
   });
 
   test("environment values override the defaults", async () => {
