@@ -4,6 +4,7 @@ jest.mock("../dist/users/Auth", () => ({
     userId: null,
   }),
   AuthGenerateJWT: jest.fn().mockResolvedValue("session-token"),
+  AuthGetSessionStartedAt: jest.fn().mockReturnValue(undefined),
 }));
 jest.mock("../dist/users/AuthRateLimit", () => ({
   AuthRateLimit: jest.fn().mockReturnValue(true),

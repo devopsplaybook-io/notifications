@@ -27,7 +27,10 @@ jest.mock("../dist/OTelContext", () => ({
 }));
 
 const {
+  AUTH_RENEWAL_THRESHOLD_SECONDS,
+  AuthGenerateJWT,
   AuthGetUserSession,
+  AuthGetValidityDuration,
   AuthInit,
   AuthRenewSession,
   AuthValidateJWTKey,
@@ -203,6 +206,69 @@ describe("authentication hardening", () => {
     expect(staleHeader).not.toHaveBeenCalled();
     expect(authOtel.mockAuthWarn).toHaveBeenCalledWith(
       "Session renewal rejected for user: admin",
+    );
+  });
+});
+
+describe("session policy", () => {
+  const policyConfig = () => ({
+    JWT_KEY: "strong-signing-key-123456789012345",
+    JWT_VALIDITY_DURATION: 2592000,
+    JWT_SESSION_MAX_DURATION: 7776000,
+  });
+
+  test("the renewal threshold fires well inside the token lifetime", async () => {
+    await AuthInit(undefined, policyConfig());
+
+    expect(AuthGetValidityDuration()).toBe(2592000);
+    expect(AUTH_RENEWAL_THRESHOLD_SECONDS).toBeGreaterThan(0);
+    expect(AUTH_RENEWAL_THRESHOLD_SECONDS).toBeLessThan(
+      AuthGetValidityDuration(),
+    );
+  });
+
+  test("caps a renewed token at the absolute session lifetime", async () => {
+    await AuthInit(undefined, policyConfig());
+    const now = Math.floor(Date.now() / 1000);
+    const sessionStartedAt = now - 80 * 24 * 60 * 60; // 80 days ago
+    sign.mockClear();
+    sign.mockReturnValueOnce("capped-token");
+
+    await AuthGenerateJWT(
+      { id: "user-1", name: "admin", tokenVersion: 0 },
+      sessionStartedAt,
+    );
+
+    const payload = sign.mock.calls[0][0];
+    expect(payload.sessionStartedAt).toBe(sessionStartedAt);
+    expect(payload.exp).toBe(sessionStartedAt + 7776000);
+    expect(payload.exp).toBeLessThan(now + 2592000);
+  });
+
+  test("rejects sessions past the absolute session lifetime", async () => {
+    await AuthInit(undefined, policyConfig());
+    authOtel.mockAuthWarn.mockClear();
+    const sessionStartedAt = Math.floor(Date.now() / 1000) - 91 * 24 * 60 * 60;
+    verify.mockReturnValueOnce({
+      iat: sessionStartedAt,
+      sessionStartedAt,
+      userId: "user-1",
+      userName: "admin",
+      tokenVersion: 0,
+    });
+    UsersDataGet.mockResolvedValueOnce({
+      id: "user-1",
+      name: "admin",
+      tokenVersion: 0,
+    });
+
+    const session = await AuthGetUserSession({
+      headers: { authorization: "Bearer aaa.bbb.ccc" },
+    });
+
+    expect(session.isAuthenticated).toBe(false);
+    expect(authOtel.mockAuthWarn).toHaveBeenCalledWith(
+      "Session exceeded its absolute lifetime for user: admin",
     );
   });
 });
