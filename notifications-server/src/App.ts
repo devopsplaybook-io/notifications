@@ -1,5 +1,6 @@
 import { StandardMeter, StandardTracer } from "@devopsplaybook.io/otel-utils";
 import {
+  AuthSessionPolicyLog,
   DbUtilsGetDatabase,
   DbUtilsSetOTel,
   DbUtilsInit,
@@ -47,6 +48,10 @@ logger.info("====== Starting Notifications Server ======");
 Promise.resolve().then(async () => {
   const config = new Config();
   await config.reload((msg) => logger.info(msg));
+  AuthSessionPolicyLog(config, {
+    app: "notifications",
+    logger: (msg) => logger.info(msg),
+  });
   AuthValidateJWTKey(config.JWT_KEY);
   const retention = new RetentionConfig(config.NOTIFICATION_RETENTION_DAYS);
   watchFile(config.CONFIG_FILE, () => {
