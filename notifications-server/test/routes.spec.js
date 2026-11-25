@@ -318,16 +318,16 @@ describe("notification routes", () => {
     expect(pushUnsubscribe.statusCode).toBe(400);
   });
 
-  test("caps the notification body at 10 KB and serialized data at 4 KB", async () => {
+  test("caps the notification body at 256 KB and serialized data at 4 KB", async () => {
     const apiHeaders = { authorization: "Bearer api-token" };
     const oversizedBody = await app.inject({
       method: "POST",
       url: "/notifications",
       headers: apiHeaders,
-      payload: { title: "Test", body: "a".repeat(10 * 1024 + 1) },
+      payload: { title: "Test", body: "a".repeat(256 * 1024 + 1) },
     });
     expect(oversizedBody.statusCode).toBe(400);
-    expect(JSON.parse(oversizedBody.body).error).toContain("10 KB");
+    expect(JSON.parse(oversizedBody.body).error).toContain("256 KB");
 
     const dataAtLimit = {
       d: "x".repeat(4 * 1024 - JSON.stringify({ d: "" }).length),
@@ -337,7 +337,7 @@ describe("notification routes", () => {
       method: "POST",
       url: "/notifications",
       headers: apiHeaders,
-      payload: { title: "Test", body: "a".repeat(10 * 1024), data: dataAtLimit },
+      payload: { title: "Test", body: "a".repeat(256 * 1024), data: dataAtLimit },
     });
     expect(atLimit.statusCode).toBe(201);
 
