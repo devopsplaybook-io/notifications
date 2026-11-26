@@ -43,6 +43,15 @@
           </button>
         </article>
 
+        <template v-if="codeLoginAvailable">
+          <h4><i class="bi bi-phone"></i> Authorize a Device</h4>
+          <AuthorizeDeviceCard
+            :service="loginCodeService"
+            variant="plain"
+            :heading-level="3"
+          />
+        </template>
+
         <h4><i class="bi bi-shield-lock-fill"></i> Change Password</h4>
         <article>
           <label>
@@ -97,6 +106,7 @@ import axios from "axios";
 import Config from "~~/services/Config";
 import { AuthService } from "~~/services/AuthService";
 import { UserService } from "~~/services/UserService";
+import { createNotificationsLoginCodeService } from "~~/utils/loginCodes";
 
 // Shared theme composable (light/dark/system) from @devopsplaybook.io/common-web
 const { preference, setTheme } = useTheme();
@@ -108,6 +118,7 @@ const themeOptions = [
 ];
 
 const authenticationStore = AuthenticationStore();
+const loginCodeService = createNotificationsLoginCodeService(authenticationStore);
 const router = useRouter();
 
 const userName = ref("");
@@ -118,6 +129,7 @@ const newPassword = ref("");
 const error = ref("");
 const passwordError = ref("");
 const initialized = ref(true);
+const codeLoginAvailable = ref(false);
 
 // The login form lives in components/LoginForm.vue; this helper only bridges
 // the create-admin bootstrap, which reuses the profile fields below.
@@ -200,6 +212,12 @@ onMounted(async () => {
   initialized.value = await UserService.isInitialized();
   if (await authenticationStore.ensureAuthenticated()) {
     userName.value = await AuthService.getUserName();
+    try {
+      const capabilities = await loginCodeService.capabilities();
+      codeLoginAvailable.value = capabilities.enabled && capabilities.available;
+    } catch {
+      codeLoginAvailable.value = false;
+    }
   }
 });
 </script>

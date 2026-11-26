@@ -10,7 +10,11 @@ const {
 const { Config } = require("../dist/Config");
 
 describe("session configuration", () => {
-  const ENV_KEYS = ["JWT_VALIDITY_DURATION", "JWT_SESSION_MAX_DURATION"];
+  const ENV_KEYS = [
+    "JWT_VALIDITY_DURATION",
+    "JWT_SESSION_MAX_DURATION",
+    "LOGIN_CODE_ENABLED",
+  ];
   const savedEnv = {};
   let tmpDir;
 
@@ -110,5 +114,16 @@ describe("session configuration", () => {
 
     expect(config.JWT_VALIDITY_DURATION).toBe(3600);
     expect(config.JWT_SESSION_MAX_DURATION).toBe(7200);
+  });
+
+  test("LOGIN_CODE_ENABLED defaults to off and follows the environment", async () => {
+    const config = newConfig();
+    await config.reload();
+    expect(config.LOGIN_CODE_ENABLED).toBe(false);
+
+    process.env.LOGIN_CODE_ENABLED = "true";
+    const enabled = newConfig();
+    await enabled.reload();
+    expect(enabled.LOGIN_CODE_ENABLED).toBe(true);
   });
 });

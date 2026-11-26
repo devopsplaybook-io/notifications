@@ -14,9 +14,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    server: { deps: { inline: ["@devopsplaybook.io/common-web"] } },
     coverage: {
       reporter: ["text", "json", "lcov"],
-      include: ["stores/**/*.ts", "services/**/*.ts"],
+      include: ["stores/**/*.ts", "services/**/*.ts", "utils/**/*.ts"],
       exclude: ["tests/**"],
     },
   },

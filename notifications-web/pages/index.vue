@@ -14,8 +14,25 @@
           <p>Sign in to view your notifications.</p>
         </div>
         <article class="login-card">
-          <LoginForm @authenticated="initAuthenticatedView" />
+          <LoginWithCodeCard
+            v-if="showCodeLogin"
+            :service="loginCodeService"
+            variant="plain"
+            :heading-level="2"
+            @approved="initAuthenticatedView"
+            @use-password="showCodeLogin = false"
+            @cancel="showCodeLogin = false"
+          />
+          <LoginForm v-else @authenticated="initAuthenticatedView" />
         </article>
+        <button
+          v-if="codeLoginAvailable && !showCodeLogin"
+          type="button"
+          class="code-login-toggle"
+          @click="showCodeLogin = true"
+        >
+          Use a code instead
+        </button>
       </template>
     </div>
 
@@ -252,12 +269,16 @@ import {
   isHttpUrl,
   parseNotificationData,
 } from "~/services/NotificationFormat";
+import { createNotificationsLoginCodeService } from "~~/utils/loginCodes";
 
 const notificationsStore = NotificationsStore();
 const authenticationStore = AuthenticationStore();
+const loginCodeService = createNotificationsLoginCodeService(authenticationStore);
 const route = useRoute();
 const router = useRouter();
 const highlightId = ref("");
+const codeLoginAvailable = ref(false);
+const showCodeLogin = ref(false);
 const pushSupported = ref(false);
 const pushSubscribed = ref(false);
 const pushPermission = ref("denied");
@@ -469,8 +490,18 @@ onMounted(async () => {
   } catch (err) {
     console.error("Failed to check user initialization", err);
   }
-  if (await authenticationStore.ensureAuthenticated()) {
+  const authenticated = await authenticationStore.ensureAuthenticated();
+  if (authenticated) {
     await initAuthenticatedView();
+  } else if (serverInitialized.value) {
+    // Probe once: a disabled feature or a missing table answers 404/503 and
+    // keeps the code UI hidden, so "flag off" means no UI at all.
+    try {
+      const capabilities = await loginCodeService.capabilities();
+      codeLoginAvailable.value = capabilities.enabled && capabilities.available;
+    } catch {
+      codeLoginAvailable.value = false;
+    }
   }
 });
 
@@ -499,6 +530,24 @@ onUnmounted(() => {
 
 .login-card {
   margin: 0;
+}
+
+.code-login-toggle {
+  display: block;
+  width: 100%;
+  margin: var(--space-sm) 0 0;
+  padding: var(--space-xs);
+  background: transparent;
+  border: none;
+  color: var(--color-primary);
+  font-size: var(--font-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.code-login-toggle:hover {
+  background: transparent;
+  color: var(--color-primary-hover, var(--color-primary));
 }
 
 .page-actions {

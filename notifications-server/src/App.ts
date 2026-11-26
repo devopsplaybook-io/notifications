@@ -28,6 +28,7 @@ import {
   AuthValidateJWTKey,
 } from "./users/Auth";
 import { UsersRoutes } from "./users/UsersRoutes";
+import { LoginCodesRegister } from "./users/LoginCodes";
 import { NotificationsRoutes } from "./notifications/NotificationsRoutes";
 import { ApiTokensRoutes } from "./apitokens/ApiTokensRoutes";
 import { ApiTokensMigrateToHashed } from "./apitokens/ApiTokensData";
@@ -163,6 +164,7 @@ Promise.resolve().then(async () => {
   fastify.register(new UsersRoutes().getRoutes, {
     prefix: "/api/users",
   });
+  await LoginCodesRegister(fastify, config);
   fastify.register(new NotificationsRoutes().getRoutes, {
     prefix: "/api/notifications",
   });
