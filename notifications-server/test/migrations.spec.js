@@ -386,6 +386,70 @@ describe("database migrations", () => {
     }
   });
 
+  test("applies 0010 login codes table to a fresh SQLite database", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "notifications-db-"));
+    const database = new Database(path.join(directory, "database.db"));
+    try {
+      for (const file of migrationFiles(sqliteMigrations)) {
+        database.exec(fs.readFileSync(path.join(sqliteMigrations, file), "utf8"));
+      }
+
+      expect(
+        database
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users_login_codes'",
+          )
+          .all(),
+      ).toHaveLength(1);
+      const columns = database
+        .prepare("PRAGMA table_info(users_login_codes)")
+        .all()
+        .map((column) => column.name);
+      expect(columns).toEqual(
+        expect.arrayContaining([
+          "id",
+          "requestTokenHash",
+          "codeHash",
+          "status",
+          "expiresAt",
+          "approvedByUserId",
+          "attempts",
+          "requestUserAgent",
+        ]),
+      );
+      const indexes = database
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index'")
+        .all()
+        .map((row) => row.name);
+      expect(indexes).toContain("users_login_codes_code_hash");
+      expect(indexes).toContain("users_login_codes_status_expires");
+
+      const insert = database.prepare(
+        'INSERT INTO users_login_codes (id, "requestTokenHash", "codeHash", "codeExpiresAt", status, "createdAt", "updatedAt", "expiresAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+      insert.run("code-1", "request-1", "code-hash-1", now, "pending", now, now, now);
+      // The request token hash and the code hash must both be unique.
+      expect(() =>
+        insert.run("code-2", "request-1", "code-hash-2", now, "pending", now, now, now),
+      ).toThrow();
+      expect(() =>
+        insert.run("code-3", "request-3", "code-hash-1", now, "pending", now, now, now),
+      ).toThrow();
+      // Attempts default to 0.
+      expect(
+        database
+          .prepare("SELECT attempts FROM users_login_codes WHERE id = ?")
+          .get("code-1").attempts,
+      ).toBe(0);
+
+      expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
+    } finally {
+      database.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   test("applies the full Postgres migration sequence including 0009", () => {
     const { newDb } = require("pg-mem");
     const crypto = require("crypto");
@@ -437,6 +501,29 @@ describe("database migrations", () => {
     expect(
       database.public.one("SELECT COUNT(*) AS count FROM email_deliveries").count,
     ).toBe(2);
+
+    // The 0010 login-code table is created by the same sequence.
+    const loginCodeInsert = `INSERT INTO users_login_codes ("id", "requestTokenHash", "codeHash", "codeExpiresAt", "status", "createdAt", "updatedAt", "expiresAt")
+      VALUES `;
+    database.public.none(
+      loginCodeInsert +
+        `('lc-1', 'rth-1', 'ch-1', '2026-01-01T00:00:00.000Z', 'pending', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+    );
+    expect(() =>
+      database.public.none(
+        loginCodeInsert +
+          `('lc-2', 'rth-1', 'ch-2', '2026-01-01T00:00:00.000Z', 'pending', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+      ),
+    ).toThrow();
+    expect(() =>
+      database.public.none(
+        loginCodeInsert +
+          `('lc-3', 'rth-3', 'ch-1', '2026-01-01T00:00:00.000Z', 'pending', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+      ),
+    ).toThrow();
+    expect(
+      database.public.one("SELECT COUNT(*) AS count FROM users_login_codes").count,
+    ).toBe(1);
   });
 
   test("applies 0009 email deliveries primary key to an existing 0008 Postgres database with duplicate ids", () => {

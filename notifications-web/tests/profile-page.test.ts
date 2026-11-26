@@ -22,6 +22,15 @@ vi.mock("../services/UserService", () => ({
   UserService: { isInitialized: vi.fn().mockResolvedValue(true) },
 }));
 
+const loginCodeMocks = vi.hoisted(() => ({
+  capabilities: vi.fn(),
+}));
+vi.mock("../utils/loginCodes", () => ({
+  createNotificationsLoginCodeService: vi.fn(() => ({
+    capabilities: loginCodeMocks.capabilities,
+  })),
+}));
+
 import axios from "axios";
 import { AuthService } from "../services/AuthService";
 import { UserService } from "../services/UserService";
@@ -46,13 +55,27 @@ const authenticationStore = {
 const mockedPost = vi.mocked(axios.post);
 const mockedPut = vi.mocked(axios.put);
 
-// LoginForm is a Nuxt auto-imported component; stub it for the mount.
-const mountOptions = { global: { stubs: { LoginForm: true } } };
+// LoginForm / AuthorizeDeviceCard are Nuxt auto-imported components; stub them.
+const AuthorizeDeviceCardStub = {
+  name: "AuthorizeDeviceCard",
+  template: '<section class="authorize-device-card-stub" />',
+};
+const mountOptions = {
+  global: {
+    stubs: { LoginForm: true },
+    components: { AuthorizeDeviceCard: AuthorizeDeviceCardStub },
+  },
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockedPost.mockReset();
   mockedPut.mockReset();
+  loginCodeMocks.capabilities.mockReset();
+  loginCodeMocks.capabilities.mockResolvedValue({
+    enabled: false,
+    available: false,
+  });
   authenticationStore.isAuthenticated = false;
   authenticationStore.ensureAuthenticated.mockResolvedValue(false);
   vi.mocked(UserService.isInitialized).mockResolvedValue(true);
@@ -124,5 +147,56 @@ describe("profile page password policy", () => {
       { headers: { authorization: "Bearer session" } },
     );
     expect(vi.mocked(AuthService.saveToken)).toHaveBeenCalledWith("new-session");
+  });
+});
+
+describe("profile page device authorization", () => {
+  it("shows the authorize-device card when logged in and available", async () => {
+    authenticationStore.isAuthenticated = true;
+    authenticationStore.ensureAuthenticated.mockResolvedValue(true);
+    loginCodeMocks.capabilities.mockResolvedValue({
+      enabled: true,
+      available: true,
+    });
+
+    const wrapper = mount(ProfilePage, mountOptions);
+    await flushPromises();
+
+    expect(wrapper.find(".authorize-device-card-stub").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Authorize a Device");
+  });
+
+  it("hides the card when the capability is not available", async () => {
+    authenticationStore.isAuthenticated = true;
+    authenticationStore.ensureAuthenticated.mockResolvedValue(true);
+    loginCodeMocks.capabilities.mockResolvedValue({
+      enabled: true,
+      available: false,
+    });
+
+    const wrapper = mount(ProfilePage, mountOptions);
+    await flushPromises();
+
+    expect(wrapper.find(".authorize-device-card-stub").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Authorize a Device");
+  });
+
+  it("hides the card when the capabilities probe fails", async () => {
+    authenticationStore.isAuthenticated = true;
+    authenticationStore.ensureAuthenticated.mockResolvedValue(true);
+    loginCodeMocks.capabilities.mockRejectedValue({ response: { status: 404 } });
+
+    const wrapper = mount(ProfilePage, mountOptions);
+    await flushPromises();
+
+    expect(wrapper.find(".authorize-device-card-stub").exists()).toBe(false);
+  });
+
+  it("does not probe capabilities when not authenticated", async () => {
+    const wrapper = mount(ProfilePage, mountOptions);
+    await flushPromises();
+
+    expect(loginCodeMocks.capabilities).not.toHaveBeenCalled();
+    expect(wrapper.find(".authorize-device-card-stub").exists()).toBe(false);
   });
 });

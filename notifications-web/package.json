@@ -1,6 +1,6 @@
 {
   "name": "notifications-web",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "private": true,
   "scripts": {
     "build": "nuxt build",
@@ -8,7 +8,7 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "lint": "oxlint components pages services stores nuxt.config.ts",
+    "lint": "oxlint components pages services stores utils nuxt.config.ts",
     "typecheck": "nuxt typecheck",
     "test": "npm run typecheck && vitest run --coverage"
   },
@@ -25,7 +25,7 @@
     "vue-tsc": "^3.3.14"
   },
   "dependencies": {
-    "@devopsplaybook.io/common-web": "^0.12.3",
+    "@devopsplaybook.io/common-web": "^0.15.0",
     "@picocss/pico": "^2.1.1",
     "@pinia/nuxt": "^1.0.3",
     "@vueuse/core": "^15.0.0",
